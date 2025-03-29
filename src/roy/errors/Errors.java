@@ -27,17 +27,25 @@ public class Errors {
 	private static void reportError(Token token, String type, String message) {
 		var span = token.span;
 		String[] lines = toLines(span.filepath);
-		var fmt = String.format("%s:%d:%d: %s: %s", span.filepath, span.line, span.column, type, message);
-		var line_fmt = String.format(" %d |", span.line);
+		
+		var line_fmt = String.format(" %d │", span.line);
+		var gap = " ".repeat(line_fmt.length());
+		var gap2 = " ".repeat(line_fmt.length() - 1);
+		var fmt = String.format("┌─%s:%d:%d: %s: %s", span.filepath, span.line, span.column, type, message);
 		
 		var index = span.line - 1 < lines.length ? span.line - 1 : lines.length -1;
 		var code_line = lines[index].replaceAll("\t", " ".repeat(1));
 		var repeat_count = token.text == null ? 1 : token.text.length();
-		System.out.println(fmt);
+		System.out.println(gap2 + fmt);
 		System.out.println(line_fmt + " " + code_line);
-		var gap = " ".repeat(line_fmt.length());
-		var tick = " ".repeat(span.column) + "^".repeat(repeat_count);
-		System.out.println(gap + tick);
+		var tick = "─".repeat(span.column) +  "┘";
+		var tick2 = " ".repeat(span.column) + "^"; 
+		System.out.println(gap2 + "│" + tick2);
+		System.out.println(gap2 + "└" + tick);
+		if (span.line + 1 < lines.length) {
+			line_fmt = String.format(" %d │", span.line + 1);
+			System.out.println(line_fmt);
+		}
 		System.exit(1);
 	}
 
