@@ -1,0 +1,33 @@
+package roy.types;
+
+import java.util.HashMap;
+import roy.rt.It;
+
+/**
+ *
+ * @author hexaredecimal
+ */
+public class Type {
+	private static HashMap<String, Type> TYPES = new HashMap<>();
+	
+	static {
+		TYPES.put("String", new StringType());
+		TYPES.put("Number", new NumberType());
+		TYPES.put("Boolean", new BooleanType());
+		TYPES.put("Unit", new StringType());
+	}
+
+	public static boolean isPrimitive(String name) {
+		return TYPES.containsKey(name);
+	}
+
+	public static Type toPrimitive(String text) {
+		if (isPrimitive(text)) return TYPES.get(text);
+		It.unreachable();
+		return null;
+	}
+
+	public boolean isUserSpecified() {
+		return this instanceof TypeVariable v ? v.is_user_defined : false;
+	}
+}
