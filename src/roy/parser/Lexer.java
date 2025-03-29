@@ -100,7 +100,7 @@ public class Lexer {
 		while (!code.isEmpty()) {
 			tmpCol = column;
 			char top = next();
-			if (Character.isLetter(top)) {
+			if (Character.isLetter(top) || top == '_') {
 				collectIdentifier(top);
 			} else if (Character.isDigit(top)) {
 				collectNumber(top);

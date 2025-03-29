@@ -1,21 +1,34 @@
 package roy.parser;
 
 import java.lang.reflect.Array;
+import java.math.MathContext;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import javax.sound.midi.Soundbank;
 import roy.ast.Arg;
 import roy.ast.Ast;
 import roy.ast.BinOp;
+import roy.ast.Block;
 import roy.ast.BooleanValue;
+import roy.ast.Call;
+import roy.ast.ConsPattern;
+import roy.ast.ExpressionPattern;
 import roy.ast.Identifier;
 import roy.ast.IfElse;
 import roy.ast.Let;
 import roy.ast.LetIn;
+import roy.ast.ListPattern;
+import roy.ast.Match;
+import roy.ast.MatchCase;
+import roy.ast.ObjectPattern;
+import roy.ast.Pattern;
 import roy.ast.RClosure;
 import roy.ast.RFunction;
+import roy.ast.RObject;
 import roy.ast.RString;
 import roy.ast.Tuple;
+import roy.ast.TuplePattern;
 import roy.errors.ErrorNode;
 import roy.errors.Errors;
 import roy.rt.It;
@@ -24,6 +37,8 @@ import roy.tokens.TokenKind;
 import roy.types.AppType;
 import roy.types.FunctionType;
 import roy.types.ListType;
+import roy.types.ObjectType;
+import roy.types.TupleType;
 import roy.types.Type;
 import roy.types.TypeVariable;
 
@@ -69,6 +84,10 @@ public class Parser {
 
 		expect(TokenKind.ASSIGN, "Expected a `=` after the return type " + peek(0));
 		var t = peek(0);
+
+		if (t.kind == TokenKind.EOF) {
+			expect(TokenKind.ERR, "Expected function to have a body when defining function `" + name.text + "`");
+		}
 		var body = expression();
 
 		if (args.size() <= 1) {
@@ -123,7 +142,7 @@ public class Parser {
 			}
 			var arg = expect(TokenKind.ID, "Expected an identifier for an argument name in function declaration");
 			args.add(new Arg(arg, new TypeVariable(arg.span)));
-		} while (!match(TokenKind.COLON) && !match(TokenKind.ASSIGN));
+		} while (!match(TokenKind.COLON) && !match(TokenKind.ASSIGN) && !match(TokenKind.ARROW));
 
 		return args;
 	}
@@ -139,7 +158,7 @@ public class Parser {
 	private Type parseType() {
 		var t = _parseType();
 		List<Type> types = new ArrayList<>();
-		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN)) {
+		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE)) {
 			types.add(_parseType());
 		}
 		if (types.isEmpty()) {
@@ -167,7 +186,48 @@ public class Parser {
 			return new ListType(inner);
 		}
 
-		It.todo();
+		if (match(TokenKind.LPAREN)) {
+			List<Type> nodes = new ArrayList<>();
+			next();
+			var node = parseType();
+			if (match(TokenKind.COMMA)) {
+				nodes.add(node);
+				while (match(TokenKind.COMMA)) {
+					next();
+					node = parseType();
+					nodes.add(node);
+				}
+				expect(TokenKind.RPAREN, "Expected `)` at the end of tuple type");
+				return new TupleType(nodes);
+			}
+			return node;
+		}
+
+		if (match(TokenKind.LBRACE)) {
+			next();
+			HashMap<Token, Type> obj = new HashMap<>();
+			var t = peek(0);
+			if (t.kind == TokenKind.RBRACE) {
+				next();
+				return new ObjectType(obj);
+			}
+
+			while (expect(TokenKind.ID, "Expected Identifier in Object type") != null) {
+				expect(TokenKind.COLON, "Expected `:` after field name in object literal");
+				var type = parseType();
+				obj.put(t, type);
+				t = peek(0);
+				if (t.kind == TokenKind.RBRACE) {
+					break;
+				}
+				expect(TokenKind.COMMA, "Expected `,` after the expression in object literal");
+			}
+
+			next();
+			return new ObjectType(obj);
+		}
+
+		It.todo("Found: " + peek(0).text);
 		return null;
 	}
 
@@ -177,12 +237,220 @@ public class Parser {
 			return groupOrTuple();
 		}
 
+		if (match(TokenKind.LBRACE)) {
+			return blockOrObject();
+		}
+
 		if (match(TokenKind.KEYWORD) && top.text.equals("let")) {
 			return letsExpression();
 		}
 
 		var result = ternary();
+
+		top = peek(0);
+		if (match(TokenKind.KEYWORD) && top.text.equals("match")) {
+			return match(result);
+		}
 		return result;
+	}
+
+	private Ast match(Ast match) {
+		next();
+		expect(TokenKind.LBRACE, "Braces required around match expression");
+		var t = peek(0);
+		List<MatchCase> cases = new ArrayList<>(); 
+		while (match(TokenKind.BITWISE_OPERATOR) && t.text.equals("|")) {
+			next();
+			var p = parsePattern();
+			expect(TokenKind.ARROW, "Expected `->` after pattern expression");
+			var body = expression();
+			cases.add(new MatchCase(p, body));
+			t = peek(0);
+		}
+
+		t = peek(0);
+		expect(TokenKind.RBRACE, "Expected closing brace at the end of match expression, but found `" + t.text + "`");
+		return new Match(match, cases);
+	}
+
+	private Pattern parsePattern() {
+		var pattern = _parsePattern();
+		if (match(TokenKind.COLON)) {
+			List<Pattern> points = new ArrayList<>();
+			points.add(pattern);
+			while (match(TokenKind.COLON)) {
+				next();
+				pattern = _parsePattern();
+				points.add(pattern);
+			}
+			return new ListPattern(points);
+		}
+		return pattern;
+	}
+
+	private Pattern _parsePattern() {
+		var t = peek(0);
+		var next = peek(1);
+		if (match(TokenKind.LBRACE)) {
+			return objectPattern();
+		} else if (match(TokenKind.LPAREN)) {
+			return tuplePattern();
+		}
+
+		var expr = expression();
+		return toPattern(expr);
+	}
+
+	private Pattern toPattern(Ast node) {
+		List<Pattern> points = new ArrayList<>();
+
+		if (node instanceof RObject obj) {
+			for (var key : obj.obj.keySet()) {
+				points.add(new ExpressionPattern(new Identifier(key)));
+			}
+			return new ObjectPattern(points);
+		}
+
+		if (node instanceof Tuple tuple) {
+			for (var point : tuple.values) {
+				points.add(new ExpressionPattern(point));
+			}
+			return new TuplePattern(points);
+		}
+
+		if (node instanceof Call call) {
+			for (var point : call.params) {
+				points.add(new ExpressionPattern(point));
+			}
+			return new ConsPattern(call.expr, points);
+		}
+
+		return new ExpressionPattern(node);
+	}
+
+	private Pattern objectPattern() {
+		List<Pattern> points = new ArrayList<>();
+		next();
+		while (!match(TokenKind.RBRACE)) {
+			var pattern = parsePattern();
+			var t = peek(0);
+			points.add(pattern);
+			if (t.kind == TokenKind.RPAREN) {
+				break;
+			}
+			expect(TokenKind.COMMA, "Expected `,` between expressions object pattern");
+		}
+		next();
+		return new ObjectPattern(points);
+	}
+
+	private Pattern tuplePattern() {
+		List<Pattern> points = new ArrayList<>();
+		
+		next();
+		while (!match(TokenKind.RBRACE)) {
+			var pattern = parsePattern();
+			var t = peek(0);
+			points.add(pattern);
+			if (t.kind == TokenKind.RPAREN) {
+				break;
+			}
+			expect(TokenKind.COMMA, "Expected `,` between expressions object pattern");
+		}
+		next();
+		return new TuplePattern(points);
+	}
+
+	private Ast blockOrObject() {
+		next();
+
+		var t = peek(0);
+		var next = peek(1);
+		if (match(TokenKind.ID) && next.kind == TokenKind.COLON) {
+			return object();
+		}
+
+		if (match(TokenKind.ID) && (next.kind == TokenKind.ARROW || next.kind == TokenKind.ID || next.kind == TokenKind.LPAREN)) {
+			return blockClosure();
+		}
+
+		if (match(TokenKind.LPAREN) && (next.kind == TokenKind.ID)) {
+			return blockClosure();
+		}
+
+		if (match(TokenKind.ID) && t.text.equals("_") && next.kind == TokenKind.ARROW) {
+			return blockClosure();
+		}
+
+		List<Ast> exprs = new ArrayList<>();
+		while (!match(TokenKind.RBRACE)) {
+			var expr = expression();
+			exprs.add(expr);
+			t = peek(0);
+			if (t.kind == TokenKind.EOF) {
+				expect(TokenKind.ERR, "Expected `}` at the end of block but found EOF.");
+			}
+		}
+
+		next();
+		return new Block(exprs);
+	}
+
+	private Ast blockClosure() {
+		var t0 = peek(0);
+		List<Arg> args = new ArrayList<>();
+		if (!t0.text.equals("_")) {
+			args = collectArgs();
+		} else {
+			next();
+		}
+
+		Type type = new TypeVariable(t0.span);
+		if (match(TokenKind.COLON)) {
+			next();
+			type = parseType();
+		}
+		expect(TokenKind.ARROW, "Expected `->` after clocure argument list");
+
+		List<Ast> exprs = new ArrayList<>();
+		while (!match(TokenKind.RBRACE)) {
+			var expr = expression();
+			exprs.add(expr);
+			var t = peek(0);
+			if (t.kind == TokenKind.EOF) {
+				expect(TokenKind.ERR, "Expected `}` at the end of block but found EOF.");
+			}
+		}
+
+		Ast expr = new Block(exprs);
+		if (exprs.size() == 1) {
+			expr = exprs.removeFirst();
+		}
+
+		next();
+
+		return new RClosure(t0, args, type, expr);
+	}
+
+	private Ast object() {
+		// name : expr
+		HashMap<Token, Ast> obj = new HashMap<>();
+		while (match(TokenKind.ID)) {
+			var name = peek(0);
+			next();
+			expect(TokenKind.COLON, "Expected `:` after field name in object literal");
+			var expr = expression();
+			var t = peek(0);
+			obj.put(name, expr);
+			if (t.kind == TokenKind.RBRACE) {
+				break;
+			}
+			expect(TokenKind.COMMA, "Expected `,` after the expression in object literal");
+		}
+
+		next();
+
+		return new RObject(obj);
 	}
 
 	private Ast letsExpression() {
@@ -198,7 +466,8 @@ public class Parser {
 		}
 
 		if (lets.size() == 1) {
-			return new LetIn(lets, let);
+			var expr = ((Let) let).name;
+			return new LetIn(lets, new Identifier(expr));
 		}
 
 		t = peek(0);
@@ -286,7 +555,8 @@ public class Parser {
 			var op = peek(0);
 			if (match(TokenKind.MULTPLICATIVE_OPERATOR)) {
 				next();
-				result = new BinOp(result, unary(), op);
+				var rhs = unary();
+				result = new BinOp(result, rhs, op);
 				continue;
 			}
 			break;
@@ -305,7 +575,48 @@ public class Parser {
 	}
 
 	private Ast call() {
+		Token t0 = peek(0);
 		Ast result = conditional();
+
+		// Check if there are any expressions following this one that could be arguments
+		Token t = peek(0);
+		if (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
+			&& !match(TokenKind.KEYWORD) && !match(TokenKind.BOOLEAN_OPERATOR) && !match(TokenKind.RBRACE)
+			&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
+			&& !match(TokenKind.STR_CONCAT_OPERATOR)) {
+
+			List<Ast> args = new ArrayList<>();
+			while (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
+				&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
+				&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR)
+				&& !match(TokenKind.STR_CONCAT_OPERATOR)) {
+
+				var t1 = peek(0);
+				var current_line = t1.span.line;
+				var prev_line = t.span.line;
+
+				if (t1.span.line > t0.span.line || t1.span.line > t.span.line) { // You are now in a different expresssion
+					break;
+				}
+
+				args.add(expression());
+
+				// Stop if we've reached a token that would terminate the argument list
+				t = peek(0);
+				if (match(TokenKind.EOF) || match(TokenKind.RPAREN) || match(TokenKind.COMMA)
+					&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
+					|| match(TokenKind.ADDITIVE_OPERATOR) || match(TokenKind.MULTPLICATIVE_OPERATOR)
+					|| match(TokenKind.STR_CONCAT_OPERATOR)) {
+					break;
+				}
+			}
+
+			// Create a function call node with the result as the function and args as parameters
+			if (!args.isEmpty()) {
+				return new Call(result, args);
+			}
+		}
+
 		return result;
 	}
 
