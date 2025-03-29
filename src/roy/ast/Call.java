@@ -22,8 +22,11 @@ public class Call implements Ast {
 		StringBuilder sb = new StringBuilder();
 		sb.append(expr);
 		for (var param: params) {
-			sb.append(" ").append(param);
+			sb
+				.append("(")
+				.append(param)
+				.append(") ");
 		}
-		return sb.toString();
+		return sb.toString().trim();
 	}
 }
