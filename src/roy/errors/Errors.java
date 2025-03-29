@@ -31,13 +31,14 @@ public class Errors {
 		var line_fmt = String.format(" %d |", span.line);
 		
 		var index = span.line - 1 < lines.length ? span.line - 1 : lines.length -1;
-		var code_line = lines[index];
+		var code_line = lines[index].replaceAll("\t", " ".repeat(1));
 		var repeat_count = token.text == null ? 1 : token.text.length();
 		System.out.println(fmt);
 		System.out.println(line_fmt + " " + code_line);
 		var gap = " ".repeat(line_fmt.length());
 		var tick = " ".repeat(span.column) + "^".repeat(repeat_count);
 		System.out.println(gap + tick);
+		System.exit(1);
 	}
 
 	private static String[] toLines(String path) {
