@@ -6,9 +6,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import javax.sound.midi.Soundbank;
+import roy.ast.AnyPattern;
 import roy.ast.Arg;
 import roy.ast.Ast;
 import roy.ast.BinOp;
+import roy.ast.BindPattern;
 import roy.ast.Block;
 import roy.ast.BooleanValue;
 import roy.ast.Call;
@@ -325,7 +327,34 @@ public class Parser {
 			return new ConsPattern(call.expr, points);
 		}
 
-		return new ExpressionPattern(node);
+		if (node instanceof Identifier id) {
+			if (id.value.text.equals("_")) {
+				return new AnyPattern();
+			}
+			return new BindPattern(id);
+		}
+
+		if (node instanceof Number || node instanceof RString || node instanceof BooleanValue) {
+			return new ExpressionPattern(node);
+		}
+
+
+		var token = getErrTokenFromAst(node);
+		Errors.reportSynaxError(token, "Invalid pattern in match case");
+		It.unreachable();
+		return null;
+	}
+
+	public Token getErrTokenFromAst(Ast ast) {
+		if (ast instanceof IfElse i) return getErrTokenFromAst(i.cond);
+		if (ast instanceof Match m) return getErrTokenFromAst(m.match);
+		if (ast instanceof BinOp b) return getErrTokenFromAst(b.lhs);
+		if (ast instanceof roy.ast.Number n) return n.value;
+		if (ast instanceof roy.ast.RString n) return n.value;
+		if (ast instanceof roy.ast.BooleanValue n) return n.value;
+
+		It.unreachable();
+		return null;
 	}
 
 	private Pattern objectPattern() {
