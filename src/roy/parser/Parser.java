@@ -260,7 +260,7 @@ public class Parser {
 		next();
 		expect(TokenKind.LBRACE, "Braces required around match expression");
 		var t = peek(0);
-		List<MatchCase> cases = new ArrayList<>(); 
+		List<MatchCase> cases = new ArrayList<>();
 		while (match(TokenKind.BITWISE_OPERATOR) && t.text.equals("|")) {
 			next();
 			var p = parsePattern();
@@ -338,7 +338,6 @@ public class Parser {
 			return new ExpressionPattern(node);
 		}
 
-
 		var token = getErrTokenFromAst(node);
 		Errors.reportSynaxError(token, "Invalid pattern in match case");
 		It.unreachable();
@@ -346,12 +345,24 @@ public class Parser {
 	}
 
 	public Token getErrTokenFromAst(Ast ast) {
-		if (ast instanceof IfElse i) return getErrTokenFromAst(i.cond);
-		if (ast instanceof Match m) return getErrTokenFromAst(m.match);
-		if (ast instanceof BinOp b) return getErrTokenFromAst(b.lhs);
-		if (ast instanceof roy.ast.Number n) return n.value;
-		if (ast instanceof roy.ast.RString n) return n.value;
-		if (ast instanceof roy.ast.BooleanValue n) return n.value;
+		if (ast instanceof IfElse i) {
+			return getErrTokenFromAst(i.cond);
+		}
+		if (ast instanceof Match m) {
+			return getErrTokenFromAst(m.match);
+		}
+		if (ast instanceof BinOp b) {
+			return getErrTokenFromAst(b.lhs);
+		}
+		if (ast instanceof roy.ast.Number n) {
+			return n.value;
+		}
+		if (ast instanceof roy.ast.RString n) {
+			return n.value;
+		}
+		if (ast instanceof roy.ast.BooleanValue n) {
+			return n.value;
+		}
 
 		It.unreachable();
 		return null;
@@ -375,7 +386,7 @@ public class Parser {
 
 	private Pattern tuplePattern() {
 		List<Pattern> points = new ArrayList<>();
-		
+
 		next();
 		while (!match(TokenKind.RBRACE)) {
 			var pattern = parsePattern();
@@ -494,15 +505,15 @@ public class Parser {
 			lets.add(let);
 		}
 
-		if (lets.size() == 1) {
-			var expr = ((Let) let).name;
-			return new LetIn(lets, new Identifier(expr));
-		}
-
 		t = peek(0);
 		if (match(TokenKind.KEYWORD) && t.text.equals("in")) {
 			next();
 			return new LetIn(lets, expression());
+		}
+
+		if (lets.size() == 1) {
+			var expr = ((Let) let).name;
+			return new LetIn(lets, new Identifier(expr));
 		}
 
 		expect(TokenKind.ERR, "Expected `in` followed by expresssion after variable declaration list");
@@ -570,6 +581,24 @@ public class Parser {
 				next();
 				result = new BinOp(result, multiplicative(), op);
 				continue;
+			} else if (match(TokenKind.PIPE)) {
+				next();
+				var t = peek(0);
+				var next = multiplicative();
+				if (!(next instanceof Call) && !(next instanceof Identifier)) {
+					Errors.reportSynaxError(t, "Pipe operator can only be used with functions and symbols");
+				}
+				List<Ast> nodes = new ArrayList<>();
+				// 5 |> hello
+				if (next instanceof Identifier id) {
+					nodes.add(id);
+					result = new Call(result, nodes);
+				} else if (next instanceof Call call) {
+					// 5 |> add 10
+					call.params.addFirst(result);
+					result = call;
+				}
+				System.out.println("" + peek(0).text);
 			}
 			break;
 		}
@@ -600,6 +629,15 @@ public class Parser {
 			It.todo("Unary");
 		}
 
+		if (match(TokenKind.ADDITIVE_OPERATOR) && op.text.equals("-")) {
+			next();
+			var lhs = expression();
+			var tok = new Token(TokenKind.NUMBER, "-1", op.span);
+			op.kind = TokenKind.MULTPLICATIVE_OPERATOR;
+			op.text = "*";
+			return new BinOp(lhs, new roy.ast.Number(tok), op);
+		}
+
 		return call();
 	}
 
@@ -612,13 +650,13 @@ public class Parser {
 		if (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
 			&& !match(TokenKind.KEYWORD) && !match(TokenKind.BOOLEAN_OPERATOR) && !match(TokenKind.RBRACE)
 			&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
-			&& !match(TokenKind.STR_CONCAT_OPERATOR)) {
+			&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE)) {
 
 			List<Ast> args = new ArrayList<>();
 			while (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
 				&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
 				&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR)
-				&& !match(TokenKind.STR_CONCAT_OPERATOR)) {
+				&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE)) {
 
 				var t1 = peek(0);
 				var current_line = t1.span.line;
@@ -635,7 +673,7 @@ public class Parser {
 				if (match(TokenKind.EOF) || match(TokenKind.RPAREN) || match(TokenKind.COMMA)
 					&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
 					|| match(TokenKind.ADDITIVE_OPERATOR) || match(TokenKind.MULTPLICATIVE_OPERATOR)
-					|| match(TokenKind.STR_CONCAT_OPERATOR)) {
+					&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE)) {
 					break;
 				}
 			}
