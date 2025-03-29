@@ -35,7 +35,7 @@ public class LetIn implements Ast {
 			sb
 				.append(lets.getFirst())
 				.append(" in ")
-				.append(lets.getFirst());
+				.append(((Let)lets.getFirst()).name.text);
 		}
 		return sb.toString();
 	}

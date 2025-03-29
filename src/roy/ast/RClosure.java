@@ -26,6 +26,6 @@ public class RClosure implements Ast {
 		var a = args.toString();
 		a = a.substring(0, a.length() - 1);
 		a = a.substring(1);
-		return String.format("\\%s: %s => %s ", a , type, body);
+		return String.format("{ %s: %s ->\n%s}", a.isEmpty() ? "()" : a , type, body.toString().indent(4));
 	}
 }
