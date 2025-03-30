@@ -21,4 +21,17 @@ public class AppType extends Type{
 		return cons + " " + args;
 	}
 	
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) return true;
+		if (!(obj instanceof AppType)) return false;
+		
+		AppType other = (AppType) obj;
+		return this.cons.equals(other.cons) && this.args.equals(other.args);
+	}
+	
+	@Override
+	public int hashCode() {
+		return 31 * cons.hashCode() + args.hashCode();
+	}
 }

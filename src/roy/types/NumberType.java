@@ -11,4 +11,13 @@ public class NumberType extends Type{
 		return "Number";
 	}
 	
+	@Override
+	public boolean equals(Object obj) {
+		return obj instanceof NumberType;
+	}
+
+	@Override
+	public int hashCode() {
+		return NumberType.class.hashCode();
+	}
 }

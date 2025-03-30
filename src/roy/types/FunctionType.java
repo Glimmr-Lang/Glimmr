@@ -24,4 +24,32 @@ public class FunctionType extends Type{
 		return a + " -> " + type;
 	}
 	
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) return true;
+		if (!(obj instanceof FunctionType)) return false;
+		
+		FunctionType other = (FunctionType) obj;
+		if (this.args.size() != other.args.size()) return false;
+		
+		// Check all argument types
+		for (int i = 0; i < this.args.size(); i++) {
+			if (!this.args.get(i).equals(other.args.get(i))) {
+				return false;
+			}
+		}
+		
+		// Check return type
+		return this.type.equals(other.type);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = 17;
+		for (Type arg : args) {
+			result = 31 * result + arg.hashCode();
+		}
+		result = 31 * result + type.hashCode();
+		return result;
+	}
 }

@@ -11,4 +11,13 @@ public class StringType extends Type{
 		return "String";
 	}
 	
+	@Override
+	public boolean equals(Object obj) {
+		return obj instanceof StringType;
+	}
+
+	@Override
+	public int hashCode() {
+		return StringType.class.hashCode();
+	}
 }

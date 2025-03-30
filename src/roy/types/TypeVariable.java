@@ -48,4 +48,17 @@ public class TypeVariable extends Type{
 		return is_user_defined ? name.text : "'" + name.text;
 	}
 	
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) return true;
+		if (!(obj instanceof TypeVariable)) return false;
+		
+		TypeVariable other = (TypeVariable) obj;
+		return this.name.text.equals(other.name.text);
+	}
+
+	@Override
+	public int hashCode() {
+		return name.text.hashCode();
+	}
 }

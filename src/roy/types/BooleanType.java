@@ -11,4 +11,14 @@ public class BooleanType extends Type{
 		return "Boolean";
 	}
 	
+	@Override
+	public boolean equals(Object obj) {
+		return obj instanceof BooleanType;
+	}
+
+	@Override
+	public int hashCode() {
+		return BooleanType.class.hashCode();
+	}
+	
 }

@@ -30,4 +30,17 @@ public class Type {
 	public boolean isUserSpecified() {
 		return this instanceof TypeVariable v ? v.is_user_defined : false;
 	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) return true;
+		// Base implementation just checks for same class
+		// Subclasses will override with more specific behavior
+		return obj != null && getClass() == obj.getClass();
+	}
+
+	@Override
+	public int hashCode() {
+		return getClass().hashCode();
+	}
 }

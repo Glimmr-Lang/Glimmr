@@ -11,4 +11,14 @@ public class UnitType extends Type{
 		return "Unit";
 	}
 	
+	@Override
+	public boolean equals(Object obj) {
+		return obj instanceof UnitType;
+	}
+
+	@Override
+	public int hashCode() {
+		return UnitType.class.hashCode();
+	}
+	
 }

@@ -41,4 +41,36 @@ public class ObjectType extends Type {
 		return sb.toString();
 	}
 
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) return true;
+		if (!(obj instanceof ObjectType)) return false;
+		
+		ObjectType other = (ObjectType) obj;
+		if (this.fields.size() != other.fields.size()) return false;
+		
+		// Check that all fields have the same type
+		for (Map.Entry<Token, Type> entry : this.fields.entrySet()) {
+			String fieldName = entry.getKey().text;
+			if (!other.fields.containsKey(fieldName)) {
+				return false;
+			}
+			if (!entry.getValue().equals(other.fields.get(fieldName))) {
+				return false;
+			}
+		}
+		
+		return true;
+	}
+
+	@Override
+	public int hashCode() {
+		int result = 17;
+		for (Map.Entry<Token, Type> entry : fields.entrySet()) {
+			result = 31 * result + entry.getKey().hashCode();
+			result = 31 * result + entry.getValue().hashCode();
+		}
+		return result;
+	}
+
 }
