@@ -122,7 +122,7 @@ public class Lexer {
 		addToken(new Token(TokenKind.EOF, null));
 
 		if (!errors.isEmpty()) {
-			errors.forEach(err -> { Errors.reportSynaxError(err.token, err.message);});
+			errors.forEach(err -> { Errors.reportSyntaxError(err.token, err.message);});
 			System.exit(0);
 		}
 
@@ -168,39 +168,52 @@ public class Lexer {
 
 	private void collectIdentifier(char top) {
 		StringBuilder sb = new StringBuilder();
-		while (Character.isLetter(top) || top == '_') {
+		var col = tmpCol;
+		while (Character.isLetter(top) || top == '_' || Character.isDigit(top)) {
 			sb.append(top);
 			if (code.isEmpty()) {
 				break;
 			}
+			col++;
 			top = next();
 		}
 
+		if (top == '\n') {
+			col -= 1;
+		}
 		unnext(top);
 		var id = sb.toString().trim();
+		col = tmpCol == 0 ? col : tmpCol;
 		if (KEYWORDS.containsKey(id)) {
-			addToken(KEYWORDS.get(id), tmpCol);
+			addToken(KEYWORDS.get(id), col);
 		} else {
 			var token = new Token(TokenKind.ID, id);
-			addToken(token, tmpCol);
+			addToken(token, col);
 		}
 	}
 
 	private void collectNumber(char top) {
 		StringBuilder sb = new StringBuilder();
+		var col = tmpCol;
 		while (Character.isDigit(top) || top == '_') {
 			sb.append(top);
 			if (code.isEmpty()) {
 				break;
 			}
+			col++;
 			top = next();
 		}
 		var id = sb.toString().replaceAll("_", "").trim();
 
+		if (top == '\n') {
+			col -= 1;
+		}
+
+		col = tmpCol == 0 ? col : tmpCol;
 		if (top != '.') {
 			unnext(top);
 			var token = new Token(TokenKind.NUMBER, id);
-			addToken(token, tmpCol);
+			addToken(token, col);
 			return;
 		}
 
@@ -211,12 +224,18 @@ public class Lexer {
 			if (code.isEmpty()) {
 				break;
 			}
+			col++;
 			top = next();
 		}
 
 		id += '.' + sb.toString();
+		if (top == '\n') {
+			col -= 1;
+		}
+
+		col = tmpCol == 0 ? col : tmpCol;
 		var token = new Token(TokenKind.NUMBER, id);
-		addToken(token, tmpCol);
+		addToken(token, col);
 	}
 
 	private void collectOperator(char top) {
