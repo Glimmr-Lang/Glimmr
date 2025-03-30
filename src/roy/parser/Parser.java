@@ -251,12 +251,12 @@ public class Parser {
 
 		top = peek(0);
 		if (match(TokenKind.KEYWORD) && top.text.equals("match")) {
-			return match(result);
+			return matchExpression(result);
 		}
 		return result;
 	}
 
-	private Ast match(Ast match) {
+	private Ast matchExpression(Ast match) {
 		next();
 		expect(TokenKind.LBRACE, "Braces required around match expression");
 		var t = peek(0);
@@ -334,12 +334,12 @@ public class Parser {
 			return new BindPattern(id);
 		}
 
-		if (node instanceof Number || node instanceof RString || node instanceof BooleanValue) {
+		if (node instanceof roy.ast.Number || node instanceof RString || node instanceof BooleanValue) {
 			return new ExpressionPattern(node);
 		}
 
 		var token = getErrTokenFromAst(node);
-		Errors.reportSynaxError(token, "Invalid pattern in match case");
+		Errors.reportSyntaxError(token, "Invalid pattern in match case");
 		It.unreachable();
 		return null;
 	}
@@ -579,14 +579,14 @@ public class Parser {
 			var op = peek(0);
 			if (match(TokenKind.ADDITIVE_OPERATOR) || match(TokenKind.STR_CONCAT_OPERATOR)) {
 				next();
-				result = new BinOp(result, multiplicative(), op);
+				result = new BinOp(result, expression(), op);
 				continue;
 			} else if (match(TokenKind.PIPE)) {
 				next();
 				var t = peek(0);
 				var next = multiplicative();
 				if (!(next instanceof Call) && !(next instanceof Identifier)) {
-					Errors.reportSynaxError(t, "Pipe operator can only be used with functions and symbols");
+					Errors.reportSyntaxError(t, "Pipe operator can only be used with functions and symbols");
 				}
 				List<Ast> nodes = new ArrayList<>();
 				// 5 |> hello
@@ -598,7 +598,6 @@ public class Parser {
 					call.params.addFirst(result);
 					result = call;
 				}
-				System.out.println("" + peek(0).text);
 			}
 			break;
 		}
@@ -613,7 +612,7 @@ public class Parser {
 			var op = peek(0);
 			if (match(TokenKind.MULTPLICATIVE_OPERATOR)) {
 				next();
-				var rhs = unary();
+				var rhs = expression();
 				result = new BinOp(result, rhs, op);
 				continue;
 			}
@@ -650,13 +649,14 @@ public class Parser {
 		if (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
 			&& !match(TokenKind.KEYWORD) && !match(TokenKind.BOOLEAN_OPERATOR) && !match(TokenKind.RBRACE)
 			&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
-			&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE)) {
+			&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD)
+			) {
 
 			List<Ast> args = new ArrayList<>();
 			while (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
 				&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
 				&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR)
-				&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE)) {
+				&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD)) {
 
 				var t1 = peek(0);
 				var current_line = t1.span.line;
@@ -673,7 +673,7 @@ public class Parser {
 				if (match(TokenKind.EOF) || match(TokenKind.RPAREN) || match(TokenKind.COMMA)
 					&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
 					|| match(TokenKind.ADDITIVE_OPERATOR) || match(TokenKind.MULTPLICATIVE_OPERATOR)
-					&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE)) {
+					&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD)) {
 					break;
 				}
 			}
@@ -768,7 +768,7 @@ public class Parser {
 			return top;
 		}
 
-		Errors.reportSynaxError(top, text);
+		Errors.reportSyntaxError(top, text);
 		System.exit(0);
 		//var err = new ErrorNode(top, text);
 		// errors.add(err);
