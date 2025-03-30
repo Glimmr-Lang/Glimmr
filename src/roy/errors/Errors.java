@@ -16,7 +16,7 @@ import roy.tokens.Token;
  * @author hexaredecimal
  */
 public class Errors {
-	public static void reportSynaxError(Token token, String message) {
+	public static void reportSyntaxError(Token token, String message) {
 		reportError(token, "Syntax Error", message);
 	}
 
