@@ -1,16 +1,17 @@
 package roy.types;
 
 import java.util.List;
+import roy.tokens.Token;
 
 /**
  *
  * @author hexaredecimal
  */
 public class AppType extends Type{
-	public Type cons;
+	public Token cons;
 	public List<Type> args; 
 
-	public AppType(Type name, List<Type> args) {
+	public AppType(Token name, List<Type> args) {
 		this.cons = name;
 		this.args = args;
 	}
@@ -18,7 +19,9 @@ public class AppType extends Type{
 	
 	@Override
 	public String toString() {
-		return cons + " " + args;
+		var f = args.toString().indexOf("[");
+		var l = args.toString().lastIndexOf("]");
+		return cons.text + " " + args.toString().substring(f+1, l);
 	}
 	
 	@Override
@@ -27,7 +30,7 @@ public class AppType extends Type{
 		if (!(obj instanceof AppType)) return false;
 		
 		AppType other = (AppType) obj;
-		return this.cons.equals(other.cons) && this.args.equals(other.args);
+		return this.cons.text.equals(other.cons.text) && this.args.equals(other.args);
 	}
 	
 	@Override

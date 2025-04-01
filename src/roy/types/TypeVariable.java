@@ -32,6 +32,11 @@ public class TypeVariable extends Type{
 		name.text = findName();
 	}
 
+	public static void reset() {
+		count = 0;
+		dup = 1;
+	}
+
 	private String findName() {
 		char[] chars = "abcdefghijklmnopqrstuvxyz".toCharArray();
 		var text = ("" + chars[count++]).repeat(dup);
