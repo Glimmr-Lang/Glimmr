@@ -43,6 +43,7 @@ import roy.types.ObjectType;
 import roy.types.TupleType;
 import roy.types.Type;
 import roy.types.TypeVariable;
+import roy.types.UnionType;
 
 /**
  *
@@ -61,11 +62,19 @@ public class Parser {
 
 	public List<Ast> parse() {
 		var top = peek(0);
+		var err_loops = 0;
 		while (!tokens.isEmpty() && top.kind != TokenKind.EOF) {
 			top = peek(0);
+			if (err_loops > 0) {
+				Errors.reportSyntaxError(top, "Invalid token encountered");
+			}
+
 			if (match(TokenKind.KEYWORD) && top.text == "fn") {
 				nodes.add(function());
+				err_loops = 0;
+				continue;
 			}
+			err_loops++;
 		}
 
 		// nodes.forEach(System.out::println);
@@ -158,16 +167,52 @@ public class Parser {
 	}
 
 	private Type parseType() {
+		var t0 = peek(0);
 		var t = _parseType();
 		List<Type> types = new ArrayList<>();
 		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE)) {
-			types.add(_parseType());
+			var t1 = peek(0);
+			if (match(TokenKind.BITWISE_OPERATOR) && t1.text == "|") {
+				next();
+
+				Type first = null;
+				if (types.size() > 0 && t instanceof TypeVariable type) {
+					first = new AppType(type.name, types);
+				} else {
+					first = t;
+				}
+
+				return parseUnionType(first);
+			} else {
+				types.add(_parseType());
+			}
 		}
 		if (types.isEmpty()) {
 			return t;
 		}
 
-		return new AppType(t, types);
+		if (!(t instanceof TypeVariable)) {
+			Errors.reportSyntaxError(t0, "Expected a name for a sum type when it being declared");
+		}
+
+		var name = ((TypeVariable) t).name;
+		return new AppType(name, types);
+	}
+
+	private Type parseUnionType(Type first) {
+		List<Type> types = new ArrayList<>();
+		types.add(first);
+		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE)) {
+			var t1 = peek(0);
+			types.add(_parseType());
+			if (match(TokenKind.BITWISE_OPERATOR) && t1.text.equals("|")) {
+				continue;
+			}  else {
+				break;
+			}
+		}
+
+		return new UnionType(types);
 	}
 
 	private Type _parseType() {
@@ -214,10 +259,11 @@ public class Parser {
 				return new ObjectType(obj);
 			}
 
-			while (expect(TokenKind.ID, "Expected Identifier in Object type") != null) {
+			while (!match(TokenKind.RBRACE)) {
+				var id = expect(TokenKind.ID, "Expected Identifier in Object type key");
 				expect(TokenKind.COLON, "Expected `:` after field name in object literal");
 				var type = parseType();
-				obj.put(t, type);
+				obj.put(id, type);
 				t = peek(0);
 				if (t.kind == TokenKind.RBRACE) {
 					break;
@@ -235,9 +281,6 @@ public class Parser {
 
 	private Ast expression() {
 		var top = peek(0);
-		if (match(TokenKind.LPAREN)) {
-			return groupOrTuple();
-		}
 
 		if (match(TokenKind.LBRACE)) {
 			return blockOrObject();
@@ -547,7 +590,7 @@ public class Parser {
 			expect(TokenKind.RPAREN, "Expected `)` after expression in tuple expression");
 			return new Tuple(nodes);
 		}
-		expect(TokenKind.RPAREN, "Expected `)` after expression in group expression");
+		expect(TokenKind.RPAREN, "Expected `)` after expression in group expression, `" + peek(0).text + "` found instead");
 		return node;
 	}
 
@@ -649,8 +692,7 @@ public class Parser {
 		if (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
 			&& !match(TokenKind.KEYWORD) && !match(TokenKind.BOOLEAN_OPERATOR) && !match(TokenKind.RBRACE)
 			&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
-			&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD)
-			) {
+			&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD)) {
 
 			List<Ast> args = new ArrayList<>();
 			while (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
@@ -662,9 +704,10 @@ public class Parser {
 				var current_line = t1.span.line;
 				var prev_line = t.span.line;
 
-				if (t1.span.line > t0.span.line || t1.span.line > t.span.line) { // You are now in a different expresssion
+				// TODO: 
+				/*if (t1.span.line > t0.span.line || t1.span.line > t.span.line) { // You are now in a different expresssion
 					break;
-				}
+				}*/
 
 				args.add(expression());
 
@@ -692,8 +735,15 @@ public class Parser {
 		if (match(TokenKind.KEYWORD) && top.text.equals("if")) {
 			return ifStatement();
 		}
-		Ast result = parsePrimary();
+		Ast result = groupExpression();
 		return result;
+	}
+
+	private Ast groupExpression() {
+		if (match(TokenKind.LPAREN)) {
+			return groupOrTuple();
+		}
+		return parsePrimary();
 	}
 
 	private Ast ifStatement() {
@@ -736,7 +786,7 @@ public class Parser {
 			}
 			return new Identifier(t);
 		}
-
+		
 		It.unreachable("parsePrimary: " + t.text);
 		return null;
 	}
