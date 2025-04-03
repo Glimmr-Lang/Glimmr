@@ -18,6 +18,7 @@ public class TypeChecker {
 
 	private List<Ast> nodes;
 	private Map<String, Type> typeEnv;
+	private Map<String, Type> localSymbolTable; // Symbol table for storing local variables that are declared using let/ 
 	private Map<TypeVariable, Type> substitutions;
 	private Map<String, RFunction> functionTable; // Function table for all functions
 	private Map<String, Boolean> checkedFunctions; // Track which functions have been checked
@@ -30,6 +31,7 @@ public class TypeChecker {
 		this.functionTable = new HashMap<>();
 		this.checkedFunctions = new HashMap<>();
 		this.functionTypes = new HashMap<>();
+		this.localSymbolTable = new HashMap<>();
 
 		// First pass: register all functions in the function table
 		registerFunctions();
@@ -66,9 +68,11 @@ public class TypeChecker {
 			// Create completely new maps for each function
 			substitutions = new HashMap<>();
 			typeEnv = new HashMap<>();
+			localSymbolTable = new HashMap<>();
 			// Double-check that they're completely empty
 			substitutions.clear();
 			typeEnv.clear();
+			localSymbolTable.clear();
 
 			String functionName = entry.getKey();
 			if (!checkedFunctions.get(functionName)) {
@@ -116,13 +120,52 @@ public class TypeChecker {
 			return inferIfElse((IfElse) node);
 		} else if (node instanceof RObject) {
 			return inferRObject((RObject) node);
-		} else {
+		} else if (node instanceof Tuple) {
+			return inferTuple((Tuple) node);
+		} else if (node instanceof Block) {
+			return inferBlock((Block) node);
+		} else if (node instanceof LetIn) {
+			return inferLetIn((LetIn) node);
+		} else if (node instanceof Unit) {
+			return inferUnit((Unit) node);
+		}
+		else {
 			// For other node types, report an error
 			Token token = getTokenFromAst(node);
 			Errors.reportTypeCheckError(token, "Type inference not implemented for: " + node.getClass().getName());
 			System.exit(0);
 			return null;
 		}
+	}
+
+	private CheckedNode inferUnit(Unit unit) {
+		return new CheckedNode(new UnitType(), unit);
+	}
+
+	private CheckedNode inferLetIn(LetIn letin) {
+		for (var let : letin.lets) {
+			var name = let.name.text;
+			var expr = infer(let.expr);
+			try {
+				unify(let.type, expr.type, expr.node);
+				localSymbolTable.put(name, expr.type);
+			} catch (TypeMismatchError e) {
+				Errors.reportTypeCheckError(let.name, "Cannot assign type " + expr.type + " to variable `" + name + "` of type " + let.type);
+				System.exit(0);
+				return null;
+			}
+		}
+
+		return new CheckedNode(infer(letin.in).type, letin);
+	}
+
+	private CheckedNode inferBlock(Block block) {
+		var exprs = block.exprs;
+		for (int i = 0; i < exprs.size() - 1; i++) {
+			var top = exprs.get(i);
+			infer(top);
+		}
+		return infer(exprs.getLast());
 	}
 
 	private Token getTokenFromAst(Ast ast) {
@@ -141,7 +184,6 @@ public class TypeChecker {
 		} else if (ast instanceof Call) {
 			return getTokenFromAst(((Call) ast).expr);
 		}
-
 		// Default to the first token we can find
 		if (ast instanceof IfElse) {
 			return getTokenFromAst(((IfElse) ast).cond);
@@ -151,9 +193,18 @@ public class TypeChecker {
 		return new Token(TokenKind.ERR, "unknown");
 	}
 
+	private CheckedNode inferTuple(Tuple tuple) {
+
+		List<Type> types = new ArrayList<>();
+		for (var node : tuple.values) {
+			types.add(infer(node).type);
+		}
+
+		return new CheckedNode(new TupleType(types), tuple);
+	}
+
 	private CheckedNode inferIdentifier(Identifier id) {
 		String name = id.value.text;
-
 
 		// Check if it's a constructor (starts with uppercase letter)
 		if (Character.isUpperCase(name.charAt(0))) {
@@ -166,7 +217,10 @@ public class TypeChecker {
 			// If the function hasn't been type-checked yet, do it now
 			if (!checkedFunctions.get(name)) {
 				RFunction func = functionTable.get(name);
+				var old = localSymbolTable;
+				localSymbolTable = new HashMap<>();
 				inferFunction(func);
+				localSymbolTable = old;
 			}
 
 			// Return the function type
@@ -178,15 +232,11 @@ public class TypeChecker {
 			return new CheckedNode(typeEnv.get(name), id);
 		}
 
-		for (var kv: typeEnv.entrySet()) {
-			var key = kv.getKey();
-			if (key.equals(name)) {
-				System.out.println("YYY");
-			}
+		if (localSymbolTable.containsKey(name)) {
+			return new CheckedNode(localSymbolTable.get(name), id);
 		}
-		
-		System.out.println("" + typeEnv);
-		Errors.reportTypeCheckError(id.value, "Usage of an undefined variable `" + name + "`");
+
+		Errors.reportTypeCheckError(id.value, "Usage of an undefined variable or function `" + name + "`");
 		System.exit(0);
 		return null;
 	}
@@ -208,40 +258,40 @@ public class TypeChecker {
 				// Force both operands to be strings, no exceptions
 				enforceStringType(leftType, binOp.lhs);
 				enforceStringType(rightType, binOp.rhs);
-				
+
 				// Special handling for operands that are identifiers
 				if (binOp.lhs instanceof Identifier) {
 					String varName = ((Identifier) binOp.lhs).value.text;
 					// Force this variable to be a string in our environment
 					typeEnv.put(varName, stringType);
-					
+
 					// Also try to find any type variables that might be related to this variable
 					// and constrain them too
 					for (Map.Entry<TypeVariable, Type> entry : substitutions.entrySet()) {
-						if (entry.getValue() instanceof TypeVariable && 
-							typeEnv.containsValue(entry.getValue()) && 
-							typeEnv.get(varName) == entry.getValue()) {
+						if (entry.getValue() instanceof TypeVariable
+							&& typeEnv.containsValue(entry.getValue())
+							&& typeEnv.get(varName) == entry.getValue()) {
 							substitutions.put(entry.getKey(), stringType);
 						}
 					}
 				}
-				
+
 				// Same for right operand
 				if (binOp.rhs instanceof Identifier) {
 					String varName = ((Identifier) binOp.rhs).value.text;
 					typeEnv.put(varName, stringType);
 					for (Map.Entry<TypeVariable, Type> entry : substitutions.entrySet()) {
-						if (entry.getValue() instanceof TypeVariable && 
-							typeEnv.containsValue(entry.getValue()) && 
-							typeEnv.get(varName) == entry.getValue()) {
+						if (entry.getValue() instanceof TypeVariable
+							&& typeEnv.containsValue(entry.getValue())
+							&& typeEnv.get(varName) == entry.getValue()) {
 							substitutions.put(entry.getKey(), stringType);
 						}
 					}
 				}
-				
+
 				// Apply substitutions aggressively
 				applyAllSubstitutions();
-				
+
 			} catch (TypeMismatchError e) {
 				Errors.reportTypeCheckError(binOp.op, "Type mismatch in string concatenation: " + e.getMessage());
 				System.exit(0);
@@ -356,7 +406,7 @@ public class TypeChecker {
 		// Put bool values on the symbol table 
 		typeEnv.put("true", new BooleanType());
 		typeEnv.put("false", new BooleanType());
-		
+
 		// If we've already checked this function, return its type
 		if (checkedFunctions.containsKey(funcName) && checkedFunctions.get(funcName)) {
 			return new CheckedNode(functionTypes.get(funcName), func);
@@ -395,12 +445,22 @@ public class TypeChecker {
 			argTypes.add(argType);
 		}
 
+		var names = new ArrayList<String>();
+		if (!func.where.isEmpty()) {
+			for (var f : func.where) {
+				var fx = (RFunction) f;
+				names.add(fx.name.text);
+				functionTable.put(fx.name.text, fx);
+				inferFunction(fx);
+			}
+		}
+
 		// Check the function body
 		CheckedNode bodyChecked = infer(func.body);
 
 		// Enhance type constraint detection for all operations
 		findAndEnforceTypeConstraints(func.body);
-		
+
 		// Apply substitutions aggressively
 		applyAllSubstitutions();
 
@@ -412,6 +472,10 @@ public class TypeChecker {
 
 		// Apply substitutions aggressively again
 		applyAllSubstitutions();
+
+		names.forEach((name) -> checkedFunctions.remove(name));
+		names.forEach((name) -> functionTable.remove(name));
+		names.forEach((name) -> functionTypes.remove(name));
 
 		// Apply substitutions to all types
 		List<Type> substitutedArgTypes = new ArrayList<>();
@@ -441,7 +505,7 @@ public class TypeChecker {
 		if (node instanceof BinOp) {
 			BinOp binOp = (BinOp) node;
 			TokenKind op = binOp.op.kind;
-			
+
 			// Get concrete type based on operation
 			Type concreteType = null;
 			if (op == TokenKind.MULTPLICATIVE_OPERATOR || op == TokenKind.ADDITIVE_OPERATOR) {
@@ -451,13 +515,13 @@ public class TypeChecker {
 			} else if (op == TokenKind.BOOLEAN_OPERATOR) {
 				concreteType = new BooleanType();
 			}
-			
+
 			if (concreteType != null) {
 				// Find all identifiers in both operands
 				List<Identifier> identifiers = new ArrayList<>();
 				findIdentifiers(binOp.lhs, identifiers);
 				findIdentifiers(binOp.rhs, identifiers);
-				
+
 				// Constrain ALL identifiers involved to be of the concrete type
 				for (Identifier id : identifiers) {
 					String name = id.value.text;
@@ -465,20 +529,19 @@ public class TypeChecker {
 						Type currentType = typeEnv.get(name);
 						// Directly set to concrete type
 						typeEnv.put(name, concreteType);
-						
+
 						// If it was a type variable, update substitutions too
 						if (currentType instanceof TypeVariable) {
-							substitutions.put((TypeVariable)currentType, concreteType);
+							substitutions.put((TypeVariable) currentType, concreteType);
 						}
 					}
 				}
 			}
-			
+
 			// Recursively check both operands
 			findAndEnforceTypeConstraints(binOp.lhs);
 			findAndEnforceTypeConstraints(binOp.rhs);
-		} 
-		else if (node instanceof Call) {
+		} else if (node instanceof Call) {
 			Call call = (Call) node;
 			// Check the function being called
 			findAndEnforceTypeConstraints(call.expr);
@@ -486,8 +549,7 @@ public class TypeChecker {
 			for (Ast arg : call.params) {
 				findAndEnforceTypeConstraints(arg);
 			}
-		}
-		else if (node instanceof IfElse) {
+		} else if (node instanceof IfElse) {
 			IfElse ifElse = (IfElse) node;
 			findAndEnforceTypeConstraints(ifElse.cond);
 			findAndEnforceTypeConstraints(ifElse.then);
@@ -498,35 +560,35 @@ public class TypeChecker {
 	// Handle function return type checking and unification
 	private Type handleFunctionReturnType(RFunction func, CheckedNode bodyChecked, List<Type> argTypes) {
 		Type returnType = bodyChecked.type;
-		
+
 		// If the function body is a call to a function that returns an AppType
 		if (func.body instanceof Call) {
 			Call call = (Call) func.body;
-			
+
 			// First apply substitutions to ensure we have up-to-date types
 			applyAllSubstitutions();
-			
+
 			if (call.expr instanceof Identifier) {
 				String calleeName = ((Identifier) call.expr).value.text;
-				
+
 				// If this is a call to a known function (not a constructor)
 				if (functionTable.containsKey(calleeName)) {
 					Type calleeType = functionTypes.get(calleeName);
 					if (calleeType instanceof FunctionType) {
 						FunctionType ft = (FunctionType) calleeType;
 						Type calleeReturnType = applySubstitutions(ft.type);
-						
+
 						// If the callee returns an AppType (variant)
 						if (calleeReturnType instanceof AppType) {
 							AppType appType = (AppType) calleeReturnType;
-							
+
 							// Check the arguments to the callee function
 							for (int i = 0; i < call.params.size(); i++) {
 								// Process each argument to the function
 								Ast param = call.params.get(i);
 								CheckedNode paramChecked = infer(param);
 								Type paramType = paramChecked.type;
-								
+
 								// If the argument is a concrete primitive type, use it in the result
 								if (isPrimitiveType(paramType)) {
 									// Create a new AppType with this concrete type
@@ -548,7 +610,7 @@ public class TypeChecker {
 				}
 			}
 		}
-		
+
 		// Rest of the method to handle return type annotation
 		if (func.type != null) {
 			try {
@@ -557,11 +619,11 @@ public class TypeChecker {
 				Errors.reportTypeCheckError(getTokenFromAst(func.body), e.getMessage());
 			}
 		}
-		
+
 		// Apply substitutions again to ensure all types are up-to-date
 		applyAllSubstitutions();
 		returnType = applySubstitutions(returnType);
-		
+
 		// Return the final type
 		return returnType;
 	}
@@ -581,13 +643,11 @@ public class TypeChecker {
 			if (op == TokenKind.STR_CONCAT_OPERATOR) {
 				StringType stringType = new StringType();
 				enforceTypeToIdentifiers(identifiers, stringType, argTypes);
-			} 
-			// For numeric operations, force all related identifiers to be numbers
+			} // For numeric operations, force all related identifiers to be numbers
 			else if (op == TokenKind.ADDITIVE_OPERATOR || op == TokenKind.MULTPLICATIVE_OPERATOR) {
 				NumberType numberType = new NumberType();
 				enforceTypeToIdentifiers(identifiers, numberType, argTypes);
-			}
-			// For boolean operations, force all related identifiers to be booleans
+			} // For boolean operations, force all related identifiers to be booleans
 			else if (op == TokenKind.BOOLEAN_OPERATOR) {
 				BooleanType booleanType = new BooleanType();
 				enforceTypeToIdentifiers(identifiers, booleanType, argTypes);
@@ -620,10 +680,10 @@ public class TypeChecker {
 				Type currentType = typeEnv.get(name);
 				// Directly set to concrete type
 				typeEnv.put(name, concreteType);
-				
+
 				// If it was a type variable, update substitutions too
 				if (currentType instanceof TypeVariable) {
-					substitutions.put((TypeVariable)currentType, concreteType);
+					substitutions.put((TypeVariable) currentType, concreteType);
 				}
 			}
 		}
@@ -679,10 +739,10 @@ public class TypeChecker {
 
 		// Process the body
 		CheckedNode bodyChecked = infer(closure.body);
-		
+
 		// Apply more aggressive constraint detection for all types
 		findAndEnforceTypeConstraints(closure.body);
-		
+
 		// Apply substitutions inside the closure
 		applyAllSubstitutions();
 
@@ -761,19 +821,13 @@ public class TypeChecker {
 			}
 
 			// Create an AppType with the constructor name and argument types
-
 			// Simple case: Single argument constructor (e.g., Some a)
 			return new CheckedNode(new AppType(id.value, argTypes), call);
 		} 
-		else if (call.expr instanceof Identifier id
-			&& !functionTable.containsKey(id.value.text)) {
-			Errors.reportTypeCheckError(id.value, "Call to undefined function `" + id.toString() + "`");
-		}
-		
 		// Regular function call processing
 		CheckedNode funcChecked = infer(call.expr);
 		Type funcType = funcChecked.type;
-		
+
 		// Check that the function type is a function
 		if (!(funcType instanceof FunctionType)) {
 			Errors.reportTypeCheckError(getTokenFromAst(call.expr),
@@ -809,11 +863,11 @@ public class TypeChecker {
 			Ast argAst = call.params.get(i);
 			CheckedNode argChecked = infer(argAst);
 			Type argType = argChecked.type;
-			
+
 			// Simply unify the argument type with the parameter type
 			try {
 				unify(ft.args.get(0), argType, argAst);
-				
+
 				// Apply substitutions after each argument
 				applyAllSubstitutions();
 			} catch (TypeMismatchError e) {
@@ -833,7 +887,7 @@ public class TypeChecker {
 
 		// Apply substitutions to the result to ensure type variables are replaced
 		resultType = applySubstitutions(resultType);
-		
+
 		return new CheckedNode(resultType, call);
 	}
 
@@ -900,12 +954,12 @@ public class TypeChecker {
 		if (t1 instanceof UnionType && t2 instanceof UnionType) {
 			UnionType ut1 = (UnionType) t1;
 			UnionType ut2 = (UnionType) t2;
-			
+
 			// For union types to match, they must contain the same set of types
 			if (ut1.types.size() != ut2.types.size()) {
 				throw new TypeMismatchError("Union types don't match");
 			}
-			
+
 			// Check if each type in ut1 can be unified with some type in ut2
 			for (Type type1 : ut1.types) {
 				boolean foundMatch = false;
@@ -924,7 +978,7 @@ public class TypeChecker {
 			}
 			return;
 		}
-		
+
 		// If one is a union type and the other is not
 		if (t1 instanceof UnionType) {
 			UnionType union = (UnionType) t1;
@@ -939,7 +993,7 @@ public class TypeChecker {
 			}
 			throw new TypeMismatchError(t2 + " doesn't match any type in union " + t1);
 		}
-		
+
 		if (t2 instanceof UnionType) {
 			UnionType union = (UnionType) t2;
 			// Check if t1 matches any of the union's types
@@ -968,17 +1022,17 @@ public class TypeChecker {
 		if (t1 instanceof AppType && t2 instanceof AppType) {
 			AppType at1 = (AppType) t1;
 			AppType at2 = (AppType) t2;
-			
+
 			// Check constructor names match
 			if (!at1.cons.text.equals(at2.cons.text)) {
 				throw new TypeMismatchError("Constructor names don't match: " + at1.cons.text + " vs " + at2.cons.text);
 			}
-			
+
 			// Check number of parameters match
 			if (at1.args.size() != at2.args.size()) {
 				throw new TypeMismatchError("Constructor " + at1.cons.text + " has different number of arguments");
 			}
-			
+
 			// Unify each parameter type
 			for (int i = 0; i < at1.args.size(); i++) {
 				unify(at1.args.get(i), at2.args.get(i), node);
@@ -1008,34 +1062,34 @@ public class TypeChecker {
 		if (t1 instanceof ObjectType && t2 instanceof ObjectType) {
 			ObjectType ot1 = (ObjectType) t1;
 			ObjectType ot2 = (ObjectType) t2;
-			
+
 			// For structure typing, check that all fields in t1 exist in t2 with compatible types
 			for (Map.Entry<Token, Type> entry : ot1.fields.entrySet()) {
 				String fieldName = entry.getKey().text;
 				Type fieldType1 = entry.getValue();
-				
+
 				// Find the same field in the second object
 				boolean foundField = false;
 				for (Map.Entry<Token, Type> entry2 : ot2.fields.entrySet()) {
 					if (entry2.getKey().text.equals(fieldName)) {
 						foundField = true;
 						Type fieldType2 = entry2.getValue();
-						
+
 						// Unify the field types
 						unify(fieldType1, fieldType2, node);
 						break;
 					}
 				}
-				
+
 				if (!foundField) {
 					throw new TypeMismatchError("Object type is missing field: " + fieldName);
 				}
 			}
-			
+
 			// Also check that all fields in t2 exist in t1
 			for (Map.Entry<Token, Type> entry : ot2.fields.entrySet()) {
 				String fieldName = entry.getKey().text;
-				
+
 				boolean foundField = false;
 				for (Map.Entry<Token, Type> entry1 : ot1.fields.entrySet()) {
 					if (entry1.getKey().text.equals(fieldName)) {
@@ -1043,12 +1097,12 @@ public class TypeChecker {
 						break;
 					}
 				}
-				
+
 				if (!foundField) {
 					throw new TypeMismatchError("Object type is missing field: " + fieldName);
 				}
 			}
-			
+
 			return;
 		}
 
@@ -1124,7 +1178,7 @@ public class TypeChecker {
 				AppType at = (AppType) result;
 				List<Type> newArgs = new ArrayList<>();
 				boolean argsChanged = false;
-				
+
 				for (Type argType : at.args) {
 					Type newArgType = applySubstitutions(argType);
 					newArgs.add(newArgType);
@@ -1132,7 +1186,7 @@ public class TypeChecker {
 						argsChanged = true;
 					}
 				}
-				
+
 				if (argsChanged) {
 					result = new AppType(at.cons, newArgs);
 					changed = true;
@@ -1141,7 +1195,7 @@ public class TypeChecker {
 				UnionType ut = (UnionType) result;
 				List<Type> newTypes = new ArrayList<>();
 				boolean typesChanged = false;
-				
+
 				for (Type unionType : ut.types) {
 					Type newType = applySubstitutions(unionType);
 					newTypes.add(newType);
@@ -1149,7 +1203,7 @@ public class TypeChecker {
 						typesChanged = true;
 					}
 				}
-				
+
 				if (typesChanged) {
 					result = new UnionType(newTypes);
 					changed = true;
@@ -1158,7 +1212,7 @@ public class TypeChecker {
 				ObjectType ot = (ObjectType) result;
 				HashMap<Token, Type> newFields = new HashMap<>();
 				boolean fieldsChanged = false;
-				
+
 				for (Map.Entry<Token, Type> entry : ot.fields.entrySet()) {
 					Type newFieldType = applySubstitutions(entry.getValue());
 					newFields.put(entry.getKey(), newFieldType);
@@ -1166,7 +1220,7 @@ public class TypeChecker {
 						fieldsChanged = true;
 					}
 				}
-				
+
 				if (fieldsChanged) {
 					result = new ObjectType(newFields);
 					changed = true;
@@ -1195,7 +1249,7 @@ public class TypeChecker {
 		}
 		if (type instanceof AppType) {
 			AppType at = (AppType) type;
-			
+
 			for (Type argType : at.args) {
 				if (occursIn(tv, argType)) {
 					return true;
@@ -1204,7 +1258,7 @@ public class TypeChecker {
 		}
 		if (type instanceof UnionType) {
 			UnionType ut = (UnionType) type;
-			
+
 			for (Type unionType : ut.types) {
 				if (occursIn(tv, unionType)) {
 					return true;
@@ -1213,7 +1267,7 @@ public class TypeChecker {
 		}
 		if (type instanceof ObjectType) {
 			ObjectType ot = (ObjectType) type;
-			
+
 			for (Type fieldType : ot.fields.values()) {
 				if (occursIn(tv, fieldType)) {
 					return true;
@@ -1254,10 +1308,10 @@ public class TypeChecker {
 		}
 		if (type instanceof AppType) {
 			AppType at = (AppType) type;
-			
+
 			List<Type> newArgs = new ArrayList<>();
 			boolean argsChanged = false;
-			
+
 			for (Type argType : at.args) {
 				Type newArgType = substituteInType(argType, tv, replacement);
 				newArgs.add(newArgType);
@@ -1265,7 +1319,7 @@ public class TypeChecker {
 					argsChanged = true;
 				}
 			}
-			
+
 			if (argsChanged) {
 				return new AppType(at.cons, newArgs);
 			}
@@ -1273,10 +1327,10 @@ public class TypeChecker {
 		}
 		if (type instanceof UnionType) {
 			UnionType ut = (UnionType) type;
-			
+
 			List<Type> newTypes = new ArrayList<>();
 			boolean typesChanged = false;
-			
+
 			for (Type unionType : ut.types) {
 				Type newType = substituteInType(unionType, tv, replacement);
 				newTypes.add(newType);
@@ -1284,7 +1338,7 @@ public class TypeChecker {
 					typesChanged = true;
 				}
 			}
-			
+
 			if (typesChanged) {
 				return new UnionType(newTypes);
 			}
@@ -1294,7 +1348,7 @@ public class TypeChecker {
 			ObjectType ot = (ObjectType) type;
 			HashMap<Token, Type> newFields = new HashMap<>();
 			boolean fieldsChanged = false;
-			
+
 			for (Map.Entry<Token, Type> entry : ot.fields.entrySet()) {
 				Type newFieldType = substituteInType(entry.getValue(), tv, replacement);
 				newFields.put(entry.getKey(), newFieldType);
@@ -1302,7 +1356,7 @@ public class TypeChecker {
 					fieldsChanged = true;
 				}
 			}
-			
+
 			if (fieldsChanged) {
 				return new ObjectType(newFields);
 			}
@@ -1327,33 +1381,33 @@ public class TypeChecker {
 		// 1. Check that the condition is a boolean
 		CheckedNode condChecked = infer(ifElse.cond);
 		Type condType = condChecked.type;
-		
+
 		try {
 			unify(condType, new BooleanType(), ifElse.cond);
 			// Apply substitutions after unification
 			applyAllSubstitutions();
 		} catch (TypeMismatchError e) {
-			Errors.reportTypeCheckError(getTokenFromAst(ifElse.cond), 
+			Errors.reportTypeCheckError(getTokenFromAst(ifElse.cond),
 				"Condition of if-else must be a boolean, but got " + condType);
 			System.exit(0);
 		}
-		
+
 		// 2. Infer types for both branches
 		CheckedNode thenChecked = infer(ifElse.then);
 		CheckedNode elseChecked = infer(ifElse.elze);
-		
+
 		// Apply substitutions to get the most concrete types
 		Type thenType = applySubstitutions(thenChecked.type);
 		Type elseType = applySubstitutions(elseChecked.type);
-		
+
 		// 3. If both branches have the same type, return that type
 		if (thenType.equals(elseType)) {
 			return new CheckedNode(thenType, ifElse);
 		}
-		
+
 		// 4. If types are different, create a union type
 		List<Type> unionTypes = new ArrayList<>();
-		
+
 		// Add thenType to the union
 		if (thenType instanceof UnionType) {
 			// If thenType is already a union, add all its types
@@ -1361,7 +1415,7 @@ public class TypeChecker {
 		} else {
 			unionTypes.add(thenType);
 		}
-		
+
 		// Add elseType to the union
 		if (elseType instanceof UnionType) {
 			// If elseType is already a union, add all its types
@@ -1379,26 +1433,26 @@ public class TypeChecker {
 				unionTypes.add(elseType);
 			}
 		}
-		
+
 		// Create the final union type
 		UnionType unionType = new UnionType(unionTypes);
-		
+
 		return new CheckedNode(unionType, ifElse);
 	}
 
 	// Enhanced method to handle type constraints for all types
 	private void enforceStringType(Type type, Ast context) throws TypeMismatchError {
 		Type applied = applySubstitutions(type);
-		
+
 		if (applied instanceof TypeVariable) {
 			TypeVariable tv = (TypeVariable) applied;
 			StringType stringType = new StringType();
 			substitutions.put(tv, stringType);
-			
+
 			// Propagate to all related type variables
 			for (Map.Entry<TypeVariable, Type> entry : substitutions.entrySet()) {
-				if (entry.getValue() instanceof TypeVariable && 
-					entry.getValue().equals(tv)) {
+				if (entry.getValue() instanceof TypeVariable
+					&& entry.getValue().equals(tv)) {
 					substitutions.put(entry.getKey(), stringType);
 				}
 			}
@@ -1412,16 +1466,16 @@ public class TypeChecker {
 	private CheckedNode inferRObject(RObject obj) {
 		// Create a HashMap to store field types
 		HashMap<Token, Type> fieldTypes = new HashMap<>();
-		
+
 		// For each field in the object
 		for (Map.Entry<Token, Ast> entry : obj.obj.entrySet()) {
 			Token fieldName = entry.getKey();
 			Ast fieldValue = entry.getValue();
-			
+
 			// Special case for when field value is an identifier with same name as field
-			if (fieldValue instanceof Identifier && ((Identifier)fieldValue).value.text.equals(fieldName.text)) {
-				String varName = ((Identifier)fieldValue).value.text;
-				
+			if (fieldValue instanceof Identifier && ((Identifier) fieldValue).value.text.equals(fieldName.text)) {
+				String varName = ((Identifier) fieldValue).value.text;
+
 				// Check if this variable exists in our environment
 				if (typeEnv.containsKey(varName)) {
 					Type fieldType = typeEnv.get(varName);
@@ -1429,22 +1483,21 @@ public class TypeChecker {
 					continue;
 				}
 			}
-			
+
 			// Normal case: Infer the type of the field value
 			CheckedNode fieldChecked = infer(fieldValue);
 			Type fieldType = fieldChecked.type;
-			
+
 			// Apply substitutions to get the most concrete type
 			fieldType = applySubstitutions(fieldType);
-			
+
 			// Add the field and its type to our map
 			fieldTypes.put(fieldName, fieldType);
 		}
-		
+
 		// Create an ObjectType with the inferred field types
 		ObjectType objectType = new ObjectType(fieldTypes);
-		
+
 		return new CheckedNode(objectType, obj);
 	}
 }
-
