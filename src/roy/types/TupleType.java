@@ -1,6 +1,7 @@
 package roy.types;
 
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  *
@@ -55,5 +56,14 @@ public class TupleType extends Type{
 			result = 31 * result + type.hashCode();
 		}
 		return result;
+	}
+
+	@Override
+	public Type clone() {
+		List<Type> clonedTypes = new ArrayList<>();
+		for (Type type : nodes) {
+			clonedTypes.add(type.clone());
+		}
+		return new TupleType(clonedTypes);
 	}
 }

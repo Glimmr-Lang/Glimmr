@@ -1,5 +1,6 @@
 package roy.types;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -51,5 +52,14 @@ public class FunctionType extends Type{
 		}
 		result = 31 * result + type.hashCode();
 		return result;
+	}
+
+	@Override
+	public Type clone() {
+		List<Type> clonedArgs = new ArrayList<>();
+		for (Type arg : args) {
+			clonedArgs.add(arg.clone());
+		}
+		return new FunctionType(clonedArgs, type.clone());
 	}
 }

@@ -40,7 +40,6 @@ public class TypeVariable extends Type{
 	private String findName() {
 		char[] chars = "abcdefghijklmnopqrstuvxyz".toCharArray();
 		var text = ("" + chars[count++]).repeat(dup);
-		is_user_defined = false;
 		if (count >= chars.length) {
 			count = 0;
 			dup++;
@@ -65,5 +64,12 @@ public class TypeVariable extends Type{
 	@Override
 	public int hashCode() {
 		return name.text.hashCode();
+	}
+
+	@Override
+	public Type clone() {
+		TypeVariable clone = new TypeVariable(name);
+		clone.is_user_defined = this.is_user_defined;
+		return clone;
 	}
 }

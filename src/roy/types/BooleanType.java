@@ -21,4 +21,9 @@ public class BooleanType extends Type{
 		return BooleanType.class.hashCode();
 	}
 	
+	@Override
+	public Type clone() {
+		return new BooleanType();
+	}
+	
 }

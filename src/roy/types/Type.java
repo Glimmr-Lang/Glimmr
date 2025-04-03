@@ -40,4 +40,13 @@ public class Type {
 	public int hashCode() {
 		return getClass().hashCode();
 	}
+
+	/**
+	 * Creates a deep copy of this type.
+	 * @return A new instance with the same properties as this type
+	 */
+	public Type clone() {
+		// Implementation of clone method
+		return null; // Placeholder return, actual implementation needed
+	}
 }

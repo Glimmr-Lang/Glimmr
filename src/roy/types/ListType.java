@@ -30,4 +30,9 @@ public class ListType extends Type{
 	public int hashCode() {
 		return 31 * ListType.class.hashCode() + inner.hashCode();
 	}
+
+	@Override
+	public Type clone() {
+		return new ListType(inner.clone());
+	}
 }

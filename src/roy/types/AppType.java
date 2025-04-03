@@ -2,6 +2,7 @@ package roy.types;
 
 import java.util.List;
 import roy.tokens.Token;
+import java.util.ArrayList;
 
 /**
  *
@@ -36,5 +37,14 @@ public class AppType extends Type{
 	@Override
 	public int hashCode() {
 		return 31 * cons.hashCode() + args.hashCode();
+	}
+
+	@Override
+	public Type clone() {
+		List<Type> clonedArgs = new ArrayList<>();
+		for (Type arg : args) {
+			clonedArgs.add(arg.clone());
+		}
+		return new AppType(cons, clonedArgs);
 	}
 }

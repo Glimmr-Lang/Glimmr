@@ -1,6 +1,7 @@
 package roy.types;
 
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  *
@@ -33,5 +34,14 @@ public class UnionType extends Type{
 	@Override
 	public int hashCode() {
 		return UnionType.class.hashCode();
+	}
+
+	@Override
+	public Type clone() {
+		List<Type> clonedTypes = new ArrayList<>();
+		for (Type type : types) {
+			clonedTypes.add(type.clone());
+		}
+		return new UnionType(clonedTypes);
 	}
 }

@@ -20,4 +20,9 @@ public class NumberType extends Type{
 	public int hashCode() {
 		return NumberType.class.hashCode();
 	}
+
+	@Override
+	public Type clone() {
+		return new NumberType();
+	}
 }

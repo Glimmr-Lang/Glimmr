@@ -21,4 +21,9 @@ public class UnitType extends Type{
 		return UnitType.class.hashCode();
 	}
 	
+	@Override
+	public Type clone() {
+		return new UnitType();
+	}
+	
 }

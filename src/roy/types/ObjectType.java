@@ -73,4 +73,13 @@ public class ObjectType extends Type {
 		return result;
 	}
 
+	@Override
+	public Type clone() {
+		HashMap<Token, Type> clonedFields = new HashMap<>();
+		for (java.util.Map.Entry<Token, Type> entry : fields.entrySet()) {
+			clonedFields.put(entry.getKey(), entry.getValue().clone());
+		}
+		return new ObjectType(clonedFields);
+	}
+
 }

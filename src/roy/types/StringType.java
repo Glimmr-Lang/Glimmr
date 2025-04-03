@@ -20,4 +20,9 @@ public class StringType extends Type{
 	public int hashCode() {
 		return StringType.class.hashCode();
 	}
+
+	@Override
+	public Type clone() {
+		return new StringType();
+	}
 }
