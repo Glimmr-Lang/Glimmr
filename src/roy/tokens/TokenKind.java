@@ -25,6 +25,7 @@ public enum TokenKind {
 	ARROW, // ->
 	COLON, //:
 	COMMA, //,
+	SEMI_COLON, // ;
 	EOF, 
 	ERR // For Error situations
 }
