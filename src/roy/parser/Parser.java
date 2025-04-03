@@ -31,6 +31,7 @@ import roy.ast.RObject;
 import roy.ast.RString;
 import roy.ast.Tuple;
 import roy.ast.TuplePattern;
+import roy.ast.Unit;
 import roy.errors.ErrorNode;
 import roy.errors.Errors;
 import roy.rt.It;
@@ -101,8 +102,15 @@ public class Parser {
 		}
 		var body = expression();
 
+		t = peek(0);
+
+		List<Ast> where = new ArrayList<Ast>();
+		if (match(TokenKind.KEYWORD) && t.text.equals("where")) {
+			where = collectWhereBlock();
+		}
+
 		if (args.size() <= 1) {
-			return new RFunction(name, args, ret_type, body);
+			return new RFunction(name, args, ret_type, body, where);
 		}
 
 		var closure_arg = args.removeLast();
@@ -127,7 +135,25 @@ public class Parser {
 		}
 
 		body = closure;
-		return new RFunction(name, args, ret_type, body);
+
+		return new RFunction(name, args, ret_type, body, where);
+	}
+
+	private List<Ast> collectWhereBlock() {
+		next();
+		var funcs = new ArrayList<Ast>();
+		while (!match(TokenKind.SEMI_COLON)) {
+			var top = peek(0);
+			if (match(TokenKind.KEYWORD) && top.text == "fn") {
+				funcs.add(function());
+			} else if (top.kind == TokenKind.SEMI_COLON || top.kind == TokenKind.EOF) {
+				break;
+			} else {
+				Errors.reportSyntaxError(top, "Invalid expression found in where block, only functions are allowed");
+			}
+		}
+		next();
+		return funcs;
 	}
 
 	private List<Arg> collectArgs() {
@@ -207,7 +233,7 @@ public class Parser {
 			types.add(_parseType());
 			if (match(TokenKind.BITWISE_OPERATOR) && t1.text.equals("|")) {
 				continue;
-			}  else {
+			} else {
 				break;
 			}
 		}
@@ -539,7 +565,7 @@ public class Parser {
 	private Ast letsExpression() {
 		next();
 		var let = letExpression();
-		List<Ast> lets = new ArrayList<>();
+		List<Let> lets = new ArrayList<>();
 		var t = peek(0);
 		var next = peek(1);
 		lets.add(let);
@@ -563,7 +589,7 @@ public class Parser {
 		return null;
 	}
 
-	private Ast letExpression() {
+	private Let letExpression() {
 		var name = expect(TokenKind.ID, "expected an identifier for the name of the variable being defined.");
 		Type type = new TypeVariable(name.span);
 		if (match(TokenKind.COLON)) {
@@ -577,6 +603,12 @@ public class Parser {
 
 	private Ast groupOrTuple() {
 		var t = next();
+
+		if (match(TokenKind.RPAREN)) {
+			next();
+			return new Unit();
+		}
+
 		var node = expression();
 		List<Ast> nodes = new ArrayList<>();
 		t = peek(0);
@@ -692,31 +724,29 @@ public class Parser {
 		if (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
 			&& !match(TokenKind.KEYWORD) && !match(TokenKind.BOOLEAN_OPERATOR) && !match(TokenKind.RBRACE)
 			&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
-			&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD)) {
+			&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD) && !match(TokenKind.SEMI_COLON)) {
 
 			List<Ast> args = new ArrayList<>();
-			while (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
+			while (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE)
 				&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
 				&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR)
-				&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD)) {
+				&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD) &&!match(TokenKind.SEMI_COLON)) {
 
 				var t1 = peek(0);
 				var current_line = t1.span.line;
 				var prev_line = t.span.line;
 
-				// TODO: 
 				/*if (t1.span.line > t0.span.line || t1.span.line > t.span.line) { // You are now in a different expresssion
 					break;
 				}*/
-
 				args.add(expression());
 
 				// Stop if we've reached a token that would terminate the argument list
 				t = peek(0);
-				if (match(TokenKind.EOF) || match(TokenKind.RPAREN) || match(TokenKind.COMMA)
+				if (match(TokenKind.EOF) || match(TokenKind.RPAREN) || match(TokenKind.COMMA) && !match(TokenKind.RBRACE)
 					&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
 					|| match(TokenKind.ADDITIVE_OPERATOR) || match(TokenKind.MULTPLICATIVE_OPERATOR)
-					&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD)) {
+					&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD) && !match(TokenKind.SEMI_COLON)) {
 					break;
 				}
 			}
@@ -786,7 +816,7 @@ public class Parser {
 			}
 			return new Identifier(t);
 		}
-		
+
 		It.unreachable("parsePrimary: " + t.text);
 		return null;
 	}
