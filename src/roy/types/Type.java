@@ -14,7 +14,7 @@ public class Type {
 		TYPES.put("String", new StringType());
 		TYPES.put("Number", new NumberType());
 		TYPES.put("Boolean", new BooleanType());
-		TYPES.put("Unit", new StringType());
+		TYPES.put("Unit", new UnitType());
 	}
 
 	public static boolean isPrimitive(String name) {
@@ -27,9 +27,6 @@ public class Type {
 		return null;
 	}
 
-	public boolean isUserSpecified() {
-		return this instanceof TypeVariable v ? v.is_user_defined : false;
-	}
 
 	@Override
 	public boolean equals(Object obj) {
