@@ -8,10 +8,10 @@ import roy.tokens.Token;
  * @author hexaredecimal
  */
 public class LetIn implements Ast {
-	public List<Ast> lets; 
+	public List<Let> lets; 
 	public Ast in;
 
-	public LetIn(List<Ast> lets, Ast in) {
+	public LetIn(List<Let> lets, Ast in) {
 		this.lets = lets;
 		this.in = in;
 	}
