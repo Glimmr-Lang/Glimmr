@@ -26,6 +26,9 @@ public enum TokenKind {
 	COLON, //:
 	COMMA, //,
 	SEMI_COLON, // ;
+	DOT, // .
+	HASH, // #
+	QUESTIONMARK, // ? 
 	EOF, 
-	ERR // For Error situations
+	ERR, // For Error situations
 }

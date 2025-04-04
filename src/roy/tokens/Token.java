@@ -26,4 +26,7 @@ public class Token {
 		return "Token{" + "kind=" + kind + ", text=" + text + ", span=" + span + '}';
 	}
 
+	public Token clone() {
+		return new Token(kind, new String(text), span);
+	}
 }
