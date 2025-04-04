@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 import roy.ast.*;
 import roy.errors.Errors;
+import roy.rt.It;
+import roy.tokens.Span;
 import roy.tokens.Token;
 import roy.tokens.TokenKind;
 import roy.types.*;
@@ -23,6 +25,7 @@ public class TypeChecker {
 	private Map<String, RFunction> functionTable; // Function table for all functions
 	private Map<String, Boolean> checkedFunctions; // Track which functions have been checked
 	private Map<String, Type> functionTypes; // Store function types separately
+	private Map<String, TypeAlias> typeAliases; // Store type aliases or named types
 
 	public TypeChecker(List<Ast> nodes) {
 		this.nodes = nodes;
@@ -32,16 +35,41 @@ public class TypeChecker {
 		this.checkedFunctions = new HashMap<>();
 		this.functionTypes = new HashMap<>();
 		this.localSymbolTable = new HashMap<>();
+		this.typeAliases = new HashMap<>();
 
 		// First pass: register all functions in the function table
-		registerFunctions();
+		registerFunctionsAndTypes();
 	}
 
 	// First pass: collect all function declarations
-	private void registerFunctions() {
+	private void registerFunctionsAndTypes() {
 		for (Ast node : nodes) {
-			if (node instanceof RFunction) {
-				RFunction func = (RFunction) node;
+			if (node instanceof TypeAlias alias) {
+				typeAliases.put(alias.name.text, alias);
+			} else if (node instanceof AnnotatedFunction func && func.isExtern) {
+				String name = func.func.name.text;
+				functionTable.put(name, func.func);
+				checkedFunctions.put(name, true);
+				
+				// Create a proper function type for extern functions
+				// instead of just using the return type
+				List<Type> argTypes = new ArrayList<>();
+				for (Arg arg : func.func.args) {
+					if (arg.type != null) {
+						argTypes.add(arg.type);
+					} else {
+						// Extern functions must have explicit types, but just in case
+						argTypes.add(freshTypeVar(arg.name));
+					}
+				}
+				
+				// Use the return type specified in the function
+				Type returnType = func.func.type != null ? func.func.type : freshTypeVar(func.func.name);
+				
+				// Create and store the function type
+				functionTypes.put(name, new FunctionType(argTypes, returnType));
+			} 
+			else if (node instanceof RFunction func) {
 				String name = func.name.text;
 				functionTable.put(name, func);
 				checkedFunctions.put(name, false);
@@ -58,6 +86,17 @@ public class TypeChecker {
 
 				Type returnType = func.type != null ? func.type : freshTypeVar(func.name);
 				functionTypes.put(name, new FunctionType(argTypes, returnType));
+
+				// Resolve any type aliases in function signature
+				if (func.type != null) {
+					func.type = resolveTypeAlias(func.type);
+				}
+
+				for (Arg arg : func.args) {
+					if (arg.type != null) {
+						arg.type = resolveTypeAlias(arg.type);
+					}
+				}
 			}
 		}
 	}
@@ -81,21 +120,21 @@ public class TypeChecker {
 			}
 		}
 
-		// Print results
-		for (Ast node : nodes) {
-			if (node instanceof RFunction) {
-				RFunction func = (RFunction) node;
-				String name = func.name.text;
-				System.out.println("Function: " + name);
-				System.out.println("Inferred type: " + functionTypes.get(name));
-				System.out.println();
-			}
+		for (var kv: functionTypes.entrySet()) {
+			var name = kv.getKey();
+			var type = kv.getValue(); 
+			System.out.println("fn " + name + " : " + type);
 		}
+		// Print results
 	}
 
 	// Create a fresh type variable using a token
 	private TypeVariable freshTypeVar(Token token) {
 		return new TypeVariable(token);
+	}
+	
+	private TypeVariable freshTypeVar(Span span) {
+		return new TypeVariable(span);
 	}
 
 	// Recursive type inference for any AST node
@@ -128,14 +167,73 @@ public class TypeChecker {
 			return inferLetIn((LetIn) node);
 		} else if (node instanceof Unit) {
 			return inferUnit((Unit) node);
-		}
-		else {
+		} else if (node instanceof FieldAccess) {
+			return inferFieldAccess((FieldAccess) node);
+		} else {
 			// For other node types, report an error
 			Token token = getTokenFromAst(node);
 			Errors.reportTypeCheckError(token, "Type inference not implemented for: " + node.getClass().getName());
 			System.exit(0);
 			return null;
 		}
+	}
+
+	private CheckedNode inferFieldAccess(FieldAccess fieldAccess) {
+		var expr = infer(fieldAccess.obj);
+		var expr_type = expr.type;
+		
+		if (!(expr_type instanceof ObjectType) && !(expr_type instanceof TypeVariable)) {
+			Token token = getTokenFromAst(fieldAccess.obj);
+			Errors.reportTypeCheckError(token, "Field access is not valid for an expression of type " + expr_type + ". Field access only works for object types");
+			System.exit(0);
+			return null;
+		}
+
+		// If it's a type variable, constrain it to be an object with the accessed field
+		if (expr_type instanceof TypeVariable) {
+			// Create a fresh type variable for the field type
+			TypeVariable fieldType = freshTypeVar(fieldAccess.field.value);
+			
+			// Create an object type with just the accessed field
+			HashMap<Token, Type> fields = new HashMap<>();
+			fields.put(fieldAccess.field.value, fieldType);
+			var constraintType = new ObjectType(fields);
+			
+			try {
+				// Unify the expression with our constraint object type
+				unify(expr_type, constraintType, fieldAccess);
+				applyAllSubstitutions();
+				
+				// Get the updated field type after unification
+				Type resultType = applySubstitutions(fieldType);
+				return new CheckedNode(resultType, fieldAccess);
+			} catch (TypeMismatchError e) {
+				Errors.reportTypeCheckError(
+					fieldAccess.field.value, 
+					"Cannot access field '" + fieldAccess.field.value.text + 
+					"' on expression of type " + expr_type
+				);
+				System.exit(0);
+				return null;
+			}
+		}
+
+		// For concrete object types, find the matching field
+		var obj = (ObjectType) expr_type;
+		for (var kv : obj.fields.entrySet()) {
+			var field = kv.getKey();
+			var type = kv.getValue();
+
+			if (field.text.equals(fieldAccess.field.value.text)) {
+				return new CheckedNode(type, fieldAccess);
+			}
+		}
+
+		// Field not found in the object
+		var field = fieldAccess.field.value;
+		Errors.reportTypeCheckError(field, "Field `" + field.text + "` is not part of object type " + obj);
+		System.exit(0);
+		return null;
 	}
 
 	private CheckedNode inferUnit(Unit unit) {
@@ -488,6 +586,9 @@ public class TypeChecker {
 		// Create the final function type
 		FunctionType finalFuncType = new FunctionType(substitutedArgTypes, substitutedReturnType);
 
+		// Present the final type with aliases where appropriate
+		finalFuncType = (FunctionType) presentFinalType(finalFuncType);
+
 		// Update function type in our registry
 		functionTypes.put(funcName, finalFuncType);
 
@@ -823,10 +924,11 @@ public class TypeChecker {
 			// Create an AppType with the constructor name and argument types
 			// Simple case: Single argument constructor (e.g., Some a)
 			return new CheckedNode(new AppType(id.value, argTypes), call);
-		} 
+		}
 		// Regular function call processing
 		CheckedNode funcChecked = infer(call.expr);
 		Type funcType = funcChecked.type;
+		
 
 		// Check that the function type is a function
 		if (!(funcType instanceof FunctionType)) {
@@ -945,6 +1047,10 @@ public class TypeChecker {
 		// Apply existing substitutions first
 		t1 = applySubstitutions(t1);
 		t2 = applySubstitutions(t2);
+
+		// Resolve type aliases
+		t1 = resolveTypeAlias(t1);
+		t2 = resolveTypeAlias(t2);
 
 		if (t1.equals(t2)) {
 			return;
@@ -1117,7 +1223,20 @@ public class TypeChecker {
 
 		// Check for circular references
 		if (occursIn(tv, type)) {
-			return; // Instead of error, just return to avoid problematic substitutions
+			return;
+		}
+
+		// Only consider type aliases for user-defined variables
+		boolean isAlias = tv.is_user_defined && typeAliases.containsKey(tv.name.text);
+
+		if (isAlias) {
+			Type aliasType = typeAliases.get(tv.name.text).type;
+			try {
+				unify(aliasType, type, null);
+				return;
+			} catch (TypeMismatchError e) {
+				// Fall through to normal substitution
+			}
 		}
 
 		// First, apply any existing substitutions to the replacement type
@@ -1148,6 +1267,18 @@ public class TypeChecker {
 
 		do {
 			changed = false;
+
+			// Resolve type aliases only if user-defined
+			if (result instanceof TypeVariable) {
+				TypeVariable tv = (TypeVariable) result;
+				if (tv.is_user_defined && typeAliases.containsKey(tv.name.text)) {
+					result = typeAliases.get(tv.name.text).type;
+					changed = true;
+					continue;
+				}
+			}
+
+			// Original code to handle substitutions
 			if (result instanceof TypeVariable) {
 				TypeVariable tv = (TypeVariable) result;
 				if (substitutions.containsKey(tv)) {
@@ -1283,8 +1414,16 @@ public class TypeChecker {
 			if (tv.equals(type)) {
 				return replacement;
 			}
+
+			// If this is a type alias, preserve it unless we're explicitly substituting it
+			TypeVariable typeVar = (TypeVariable) type;
+			if (typeAliases.containsKey(typeVar.name.text) && !typeVar.equals(tv)) {
+				return type; // Preserve the type alias
+			}
+
 			return type;
 		}
+
 		if (type instanceof FunctionType) {
 			FunctionType ft = (FunctionType) type;
 
@@ -1499,5 +1638,55 @@ public class TypeChecker {
 		ObjectType objectType = new ObjectType(fieldTypes);
 
 		return new CheckedNode(objectType, obj);
+	}
+
+	// New method to resolve type aliases
+	private Type resolveTypeAlias(Type type) {
+		if (type instanceof TypeVariable) {
+			TypeVariable tv = (TypeVariable) type;
+			// Only resolve if it's a user-defined type variable
+			if (tv.is_user_defined && typeAliases.containsKey(tv.name.text)) {
+				return typeAliases.get(tv.name.text).type;
+			}
+		}
+		return type;
+	}
+
+	// Completely revise the presentFinalType method to be more conservative
+	private Type presentFinalType(Type type) {
+		// Don't convert primitive types to aliases unless they're directly 
+		// involved with a user-defined type variable
+
+		// For function types, recurse on args and return type
+		if (type instanceof FunctionType) {
+			FunctionType ft = (FunctionType) type;
+			List<Type> newArgs = new ArrayList<>();
+			boolean changed = false;
+
+			for (Type argType : ft.args) {
+				Type presented = presentFinalType(argType);
+				newArgs.add(presented);
+				if (presented != argType) {
+					changed = true;
+				}
+			}
+
+			Type newReturnType = presentFinalType(ft.type);
+			if (newReturnType != ft.type || changed) {
+				return new FunctionType(newArgs, newReturnType);
+			}
+		}
+
+		// Only preserve explicit user-defined type variables that correspond to aliases
+		if (type instanceof TypeVariable) {
+			TypeVariable tv = (TypeVariable) type;
+			if (tv.is_user_defined && typeAliases.containsKey(tv.name.text)) {
+				// This is a user-defined type that matches an alias name, preserve it
+				return tv;
+			}
+		}
+
+		// Don't convert primitive types to aliases automatically
+		return type;
 	}
 }
