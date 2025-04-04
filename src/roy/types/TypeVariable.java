@@ -15,7 +15,7 @@ public class TypeVariable extends Type{
 	public boolean is_user_defined;
 
 	public TypeVariable(Token text) {
-		name = text;
+		name = text.clone();
 		is_user_defined = false;
 		name.text += findName();
 	}
