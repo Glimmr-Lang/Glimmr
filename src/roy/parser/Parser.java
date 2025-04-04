@@ -1,11 +1,10 @@
 package roy.parser;
 
-import java.lang.reflect.Array;
-import java.math.MathContext;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
-import javax.sound.midi.Soundbank;
+import roy.ast.AnnotatedFunction;
 import roy.ast.AnyPattern;
 import roy.ast.Arg;
 import roy.ast.Ast;
@@ -16,8 +15,10 @@ import roy.ast.BooleanValue;
 import roy.ast.Call;
 import roy.ast.ConsPattern;
 import roy.ast.ExpressionPattern;
+import roy.ast.FieldAccess;
 import roy.ast.Identifier;
 import roy.ast.IfElse;
+import roy.ast.JSCode;
 import roy.ast.Let;
 import roy.ast.LetIn;
 import roy.ast.ListPattern;
@@ -31,9 +32,11 @@ import roy.ast.RObject;
 import roy.ast.RString;
 import roy.ast.Tuple;
 import roy.ast.TuplePattern;
+import roy.ast.TypeAlias;
 import roy.ast.Unit;
 import roy.errors.ErrorNode;
 import roy.errors.Errors;
+import roy.fs.Fs;
 import roy.rt.It;
 import roy.tokens.Token;
 import roy.tokens.TokenKind;
@@ -67,13 +70,28 @@ public class Parser {
 		while (!tokens.isEmpty() && top.kind != TokenKind.EOF) {
 			top = peek(0);
 			if (err_loops > 0) {
-				Errors.reportSyntaxError(top, "Invalid token encountered");
+				Errors.reportSyntaxError(top, "Invalid token encountered: " + peek(0).kind);
 			}
 
 			if (match(TokenKind.KEYWORD) && top.text == "fn") {
 				nodes.add(function());
 				err_loops = 0;
 				continue;
+			}
+
+			if (match(TokenKind.KEYWORD) && top.text == "type") {
+				nodes.add(typeAlias());
+				err_loops = 0;
+				continue;
+			}
+
+			if (match(TokenKind.HASH)) {
+				nodes.add(annotatedNode());
+				continue;
+			}
+
+			if (match(TokenKind.EOF)) {
+				break;
 			}
 			err_loops++;
 		}
@@ -82,9 +100,145 @@ public class Parser {
 		return nodes;
 	}
 
+	private Ast annotatedNode() {
+		next();
+		expect(TokenKind.LBRACKET, "Expected `[` after the `#`");
+		List<String> annotations = new ArrayList<>();
+		while (!match(TokenKind.RBRACKET)) {
+			if (match(TokenKind.ID)) {
+				var t = peek(0);
+				annotations.add(t.text);
+				next();
+
+				if (match(TokenKind.COMMA)) {
+					next();
+				}
+			}
+		}
+		expect(TokenKind.RBRACKET, "Expected `]` after the list of annotations");
+
+		var t = peek(0);
+		if (match(TokenKind.EOF)) {
+			Errors.reportSyntaxError(t, "Expected fn after the annotation but found EOF instead");
+		}
+
+		if (!match(TokenKind.KEYWORD) && !t.text.equals("fn")) {
+			Errors.reportSyntaxError(t, "Expected fn after the annotation but found " + t.text + " instead");
+		}
+
+		var func = annotatedFunction(annotations.contains("extern"));
+		return new AnnotatedFunction(annotations, (RFunction) func);
+	}
+
+	private Ast annotatedFunction(boolean is_extern) {
+		next();
+		var name = expect(TokenKind.ID, "Expected an identifier for function name after the `fn` keyword");
+		var args = collectArgs();
+
+		Type ret_type = new TypeVariable(name.span);
+
+		if (match(TokenKind.COLON)) {
+			next();
+			ret_type = parseType();
+		}
+
+		var t0 = peek(0);
+		expect(TokenKind.ASSIGN, "Expected a `=` after the return type " + peek(0));
+		var t = peek(0);
+
+		if (t.kind == TokenKind.EOF) {
+			expect(TokenKind.ERR, "Expected function to have a body when defining function `" + name.text + "`");
+		}
+		Ast body = null;
+
+		if (is_extern) {
+			var start = t0;
+			StringBuilder sb = new StringBuilder();
+			while (!match(TokenKind.SEMI_COLON)) {
+				sb.append(peek(0).text).append(" ");
+				if (match(TokenKind.EOF)) {
+					Errors.reportSyntaxError(peek(0), "Expected `;` at the end of extern function body");
+					System.exit(0);
+				}
+				next();
+			}
+			var end = peek(0);
+			next();
+
+			body = new JSCode(start, end, sb.toString());
+		} else {
+			body = expression();
+		}
+
+		t = peek(0);
+
+		List<Ast> where = new ArrayList<Ast>();
+		if (match(TokenKind.KEYWORD) && t.text.equals("where")) {
+			if (is_extern) {
+				Errors.reportSyntaxError(peek(0), "Extern functions cannot have where blocks");
+			} else {
+				where = collectWhereBlock();
+			}
+		}
+
+		if (is_extern) {
+			if (ret_type instanceof TypeVariable tv && !tv.is_user_defined) {
+				Errors.reportSyntaxError(t0, "All arguments in extern function must be be explicitly typed. That also goes for the return type");
+			}
+			args.forEach(arg -> {
+				if (arg.type instanceof TypeVariable tv && !tv.is_user_defined) {
+					Errors.reportSyntaxError(arg.name, "All arguments in extern function must be be explicitly typed");
+				}
+			});
+		}
+		
+		if (args.size() <= 1) {
+			return new RFunction(name, args, ret_type, body, where);
+		}
+
+		var closure_arg = args.removeLast();
+		var closure_args = new ArrayList<Arg>();
+		closure_args.add(closure_arg);
+
+		var closure = new RClosure(t, closure_args, ret_type, body);
+		var argTypes = new ArrayList<Type>();
+		argTypes.add(closure_arg.type);
+		ret_type = new FunctionType(argTypes, ret_type);
+
+		while (args.size() > 1) {
+			closure_arg = args.removeLast();
+			closure_args = new ArrayList<>();
+			closure_args.add(closure_arg);
+
+			argTypes = new ArrayList<>();
+			argTypes.add(closure_arg.type);
+
+			ret_type = new FunctionType(argTypes, ret_type);
+
+			closure = new RClosure(t, closure_args, ret_type, closure);
+		}
+
+		body = closure;
+
+		return new RFunction(name, args, ret_type, body, where);
+	}
+
+	private Ast typeAlias() {
+		next();
+		var name = expect(TokenKind.ID, "Expected an identifier for type alias name after the `type` keyword");
+		expect(TokenKind.ASSIGN, "Expected a `=` after the alias name" + peek(0));
+		var t = peek(0);
+
+		if (t.kind == TokenKind.EOF) {
+			expect(TokenKind.ERR, "Expected type alias to have a type after the `=` in when declaring type alias `" + name.text + "`");
+		}
+		var type = parseType();
+		return new TypeAlias(name, type);
+	}
+
 	private Ast function() {
 		next();
-		var name = expect(TokenKind.ID, "expected an identifier for function name after the `fn` keyword");
+		var name = expect(TokenKind.ID, "Expected an identifier for function name after the `fn` keyword");
 		var args = collectArgs();
 
 		Type ret_type = new TypeVariable(name.span);
@@ -196,7 +350,7 @@ public class Parser {
 		var t0 = peek(0);
 		var t = _parseType();
 		List<Type> types = new ArrayList<>();
-		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE)) {
+		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE) && !match(TokenKind.KEYWORD) && !match(TokenKind.HASH)) {
 			var t1 = peek(0);
 			if (match(TokenKind.BITWISE_OPERATOR) && t1.text == "|") {
 				next();
@@ -307,10 +461,6 @@ public class Parser {
 
 	private Ast expression() {
 		var top = peek(0);
-
-		if (match(TokenKind.LBRACE)) {
-			return blockOrObject();
-		}
 
 		if (match(TokenKind.KEYWORD) && top.text.equals("let")) {
 			return letsExpression();
@@ -638,7 +788,7 @@ public class Parser {
 			var op = peek(0);
 			if (match(TokenKind.BOOLEAN_OPERATOR)) {
 				next();
-				result = new BinOp(result, additive(), op);
+				result = new BinOp(result, expression(), op);
 				continue;
 			}
 			break;
@@ -681,7 +831,7 @@ public class Parser {
 	}
 
 	private Ast multiplicative() {
-		Ast result = unary();
+		Ast result = fieldAccess();
 
 		while (true) {
 			var op = peek(0);
@@ -690,6 +840,24 @@ public class Parser {
 				var rhs = expression();
 				result = new BinOp(result, rhs, op);
 				continue;
+			}
+			break;
+		}
+
+		return result;
+	}
+
+	private Ast fieldAccess() {
+		Ast result = unary();
+		while (true) {
+			if (match(TokenKind.DOT)) {
+				next();
+				var t = peek(0);
+				if (match(TokenKind.ID)) {
+					next();
+					result = new FieldAccess(result, new Identifier(t));
+					continue;
+				}
 			}
 			break;
 		}
@@ -715,23 +883,24 @@ public class Parser {
 		return call();
 	}
 
+	private boolean isCallValid() {
+		return !match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
+			&& !match(TokenKind.KEYWORD) && !match(TokenKind.BOOLEAN_OPERATOR) && !match(TokenKind.RBRACE)
+			&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
+			&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD) && !match(TokenKind.SEMI_COLON)
+			&& !match(TokenKind.DOT);
+	}
+
 	private Ast call() {
 		Token t0 = peek(0);
 		Ast result = conditional();
 
 		// Check if there are any expressions following this one that could be arguments
 		Token t = peek(0);
-		if (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA)
-			&& !match(TokenKind.KEYWORD) && !match(TokenKind.BOOLEAN_OPERATOR) && !match(TokenKind.RBRACE)
-			&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
-			&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD) && !match(TokenKind.SEMI_COLON)) {
+		if (isCallValid()) {
 
 			List<Ast> args = new ArrayList<>();
-			while (!match(TokenKind.EOF) && !match(TokenKind.RPAREN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE)
-				&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
-				&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR)
-				&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD) &&!match(TokenKind.SEMI_COLON)) {
-
+			while (isCallValid()) {
 				var t1 = peek(0);
 				var current_line = t1.span.line;
 				var prev_line = t.span.line;
@@ -743,10 +912,8 @@ public class Parser {
 
 				// Stop if we've reached a token that would terminate the argument list
 				t = peek(0);
-				if (match(TokenKind.EOF) || match(TokenKind.RPAREN) || match(TokenKind.COMMA) && !match(TokenKind.RBRACE)
-					&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
-					|| match(TokenKind.ADDITIVE_OPERATOR) || match(TokenKind.MULTPLICATIVE_OPERATOR)
-					&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD) && !match(TokenKind.SEMI_COLON)) {
+
+				if (isCallValid()) {
 					break;
 				}
 			}
@@ -764,6 +931,14 @@ public class Parser {
 		var top = peek(0);
 		if (match(TokenKind.KEYWORD) && top.text.equals("if")) {
 			return ifStatement();
+		}
+		Ast result = blockOrClosureOrObject();
+		return result;
+	}
+
+	private Ast blockOrClosureOrObject() {
+		if (match(TokenKind.LBRACE)) {
+			return blockOrObject();
 		}
 		Ast result = groupExpression();
 		return result;
