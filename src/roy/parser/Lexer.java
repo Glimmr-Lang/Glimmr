@@ -58,6 +58,10 @@ public class Lexer {
 		OPERATORS.put(":", new Token(TokenKind.COLON, ":"));
 		OPERATORS.put(",", new Token(TokenKind.COMMA, ","));
 		OPERATORS.put(";", new Token(TokenKind.SEMI_COLON, ";"));
+		OPERATORS.put(".", new Token(TokenKind.DOT, "."));
+		
+		OPERATORS.put("#", new Token(TokenKind.HASH, "#")); 
+		OPERATORS.put("?", new Token(TokenKind.QUESTIONMARK, "?"));
 
 	}
 
@@ -74,6 +78,7 @@ public class Lexer {
 		KEYWORDS.put("let", new Token(TokenKind.KEYWORD, "let"));
 		KEYWORDS.put("in", new Token(TokenKind.KEYWORD, "in"));
 		KEYWORDS.put("where", new Token(TokenKind.KEYWORD, "where"));
+		KEYWORDS.put("type", new Token(TokenKind.KEYWORD, "type"));
 	}
 
 	private List<ErrorNode> errors;
