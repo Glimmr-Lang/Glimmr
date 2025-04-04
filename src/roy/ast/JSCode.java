@@ -6,17 +6,19 @@ import roy.tokens.Token;
  *
  * @author hexaredecimal
  */
-public class Number implements Ast {
-	public Token value;
+public class JSCode implements Ast {
+	public Token start, end;
+	public String code;
 
-	public Number(Token value) {
-		this.value = value;
+	public JSCode(Token start, Token end, String code) {
+		this.start = start;
+		this.end = end;
+		this.code = code;
 	}
 
 	
 	@Override
 	public String toString() {
-		return value.text;
+		return code; 
 	}
-
 }

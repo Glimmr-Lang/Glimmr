@@ -1,22 +1,22 @@
 package roy.ast;
 
-import roy.tokens.Token;
-
 /**
  *
  * @author hexaredecimal
  */
-public class Number implements Ast {
-	public Token value;
+public class FieldAccess implements Ast {
+	
+	public Ast obj;
+	public Identifier field;
 
-	public Number(Token value) {
-		this.value = value;
+	public FieldAccess(Ast obj, Identifier field) {
+		this.obj = obj;
+		this.field = field;
 	}
-
 	
 	@Override
 	public String toString() {
-		return value.text;
+		return obj.toString() + "." + field.toString();
 	}
 
 }

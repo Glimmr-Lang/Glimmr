@@ -1,22 +1,25 @@
 package roy.ast;
 
 import roy.tokens.Token;
+import roy.types.Type;
 
 /**
  *
  * @author hexaredecimal
  */
-public class Number implements Ast {
-	public Token value;
+public class TypeAlias implements Ast {
+	public Token name;
+	public Type type;
 
-	public Number(Token value) {
-		this.value = value;
+	public TypeAlias(Token name, Type type) {
+		this.name = name;
+		this.type = type;
 	}
-
+	
 	
 	@Override
 	public String toString() {
-		return value.text;
+		return "type " + name.text + " = " + type;
 	}
 
 }
