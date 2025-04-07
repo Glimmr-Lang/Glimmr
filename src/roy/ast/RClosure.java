@@ -13,12 +13,14 @@ public class RClosure implements Ast {
 	public List<Arg> args; 
 	public Type type;
 	public Ast body;
+	public boolean no_return;
 
 	public RClosure(Token name, List<Arg> args, Type type, Ast body) {
 		this.name = name;
 		this.args = args;
 		this.type = type;
 		this.body = body;
+		this.no_return = false;
 	}
 
 	@Override
