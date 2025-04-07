@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.function.Function;
 import roy.ast.AnnotatedFunction;
 import roy.ast.AnyPattern;
 import roy.ast.Arg;
@@ -16,6 +17,7 @@ import roy.ast.Call;
 import roy.ast.ConsPattern;
 import roy.ast.ExpressionPattern;
 import roy.ast.FieldAccess;
+import roy.ast.GroupExpression;
 import roy.ast.Identifier;
 import roy.ast.IfElse;
 import roy.ast.JSCode;
@@ -43,6 +45,7 @@ import roy.tokens.TokenKind;
 import roy.types.AppType;
 import roy.types.FunctionType;
 import roy.types.ListType;
+import roy.types.NamedType;
 import roy.types.ObjectType;
 import roy.types.TupleType;
 import roy.types.Type;
@@ -102,7 +105,7 @@ public class Parser {
 
 	private Ast annotatedNode() {
 		next();
-		expect(TokenKind.LBRACKET, "Expected `[` after the `#`");
+		var top = expect(TokenKind.LBRACKET, "Expected `[` after the `#`");
 		List<String> annotations = new ArrayList<>();
 		while (!match(TokenKind.RBRACKET)) {
 			if (match(TokenKind.ID)) {
@@ -126,8 +129,19 @@ public class Parser {
 			Errors.reportSyntaxError(t, "Expected fn after the annotation but found " + t.text + " instead");
 		}
 
-		var func = annotatedFunction(annotations.contains("extern"));
-		return new AnnotatedFunction(annotations, (RFunction) func);
+		if (annotations.contains("extern")) {
+			var func = annotatedFunction(annotations.contains("extern"));
+			return new AnnotatedFunction(annotations, (RFunction) func);
+		}
+
+		if (annotations.contains("export")) {
+			var func = function();
+			return new AnnotatedFunction(annotations, (RFunction) func);
+		}
+
+		var str = String.join(", ", annotations);
+		Errors.reportSyntaxError(top, "Invalid annotations found. Expected extern or export but found `" + str + "`");
+		return null;
 	}
 
 	private Ast annotatedFunction(boolean is_extern) {
@@ -152,10 +166,9 @@ public class Parser {
 		Ast body = null;
 
 		if (is_extern) {
-			var start = t0;
+			var start = name;
 			StringBuilder sb = new StringBuilder();
 			while (!match(TokenKind.SEMI_COLON)) {
-				sb.append(peek(0).text).append(" ");
 				if (match(TokenKind.EOF)) {
 					Errors.reportSyntaxError(peek(0), "Expected `;` at the end of extern function body");
 					System.exit(0);
@@ -164,6 +177,24 @@ public class Parser {
 			}
 			var end = peek(0);
 			next();
+			
+			var lines = Fs
+				.readToString(start.span.filepath)
+				.unwrap()
+				.lines()
+				.toList();
+			
+			var started = false;
+			for (int i = start.span.line ; i < lines.size(); i++ ) {
+				var line = lines.get(i).trim();
+				if (line.contains(";")) {
+					if (line.length() > 1) {
+						sb.append(line);
+					}
+					break;
+				}
+				sb.append(line).append(";\n");
+			}
 
 			body = new JSCode(start, end, sb.toString());
 		} else {
@@ -201,6 +232,7 @@ public class Parser {
 		closure_args.add(closure_arg);
 
 		var closure = new RClosure(t, closure_args, ret_type, body);
+		closure.no_return = true;
 		var argTypes = new ArrayList<Type>();
 		argTypes.add(closure_arg.type);
 		ret_type = new FunctionType(argTypes, ret_type);
@@ -226,6 +258,9 @@ public class Parser {
 	private Ast typeAlias() {
 		next();
 		var name = expect(TokenKind.ID, "Expected an identifier for type alias name after the `type` keyword");
+		if (!Character.isUpperCase(name.text.charAt(0))) {
+			Errors.reportSyntaxError(name, "Type aliases are must start with an uppercase letter");
+		}
 		expect(TokenKind.ASSIGN, "Expected a `=` after the alias name" + peek(0));
 		var t = peek(0);
 
@@ -350,13 +385,19 @@ public class Parser {
 		var t0 = peek(0);
 		var t = _parseType();
 		List<Type> types = new ArrayList<>();
-		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE) && !match(TokenKind.KEYWORD) && !match(TokenKind.HASH)) {
+		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE) && !match(TokenKind.KEYWORD) && !match(TokenKind.HASH) && !match(TokenKind.EOF)) {
 			var t1 = peek(0);
 			if (match(TokenKind.BITWISE_OPERATOR) && t1.text == "|") {
 				next();
 
+				if (match(TokenKind.EOF)) {
+					Errors.reportSyntaxError(peek(0), "Found EOF while parsing sum type");
+				}
+				
 				Type first = null;
-				if (types.size() > 0 && t instanceof TypeVariable type) {
+				if (types.size() > 0 && t instanceof NamedType type) {
+					first = new AppType(type.name, types);
+				} else if (types.size() > 0 && t instanceof TypeVariable type) {
 					first = new AppType(type.name, types);
 				} else {
 					first = t;
@@ -371,11 +412,19 @@ public class Parser {
 			return t;
 		}
 
-		if (!(t instanceof TypeVariable)) {
-			Errors.reportSyntaxError(t0, "Expected a name for a sum type when it being declared");
+		if (!(t instanceof TypeVariable) && !(t instanceof NamedType)) {
+			Errors.reportSyntaxError(t0, "Expected a name for a sum type when it being declared ");
 		}
+		
 
-		var name = ((TypeVariable) t).name;
+		Function<?, ?> die = (o) -> { 
+			It.unreachable();
+			return null; 
+		};
+		
+		var name = t instanceof TypeVariable ty 
+			? ty.name : t instanceof NamedType nty
+			? nty.name : (Token) die.apply(null);
 		return new AppType(name, types);
 	}
 
@@ -399,9 +448,11 @@ public class Parser {
 		var top = peek(0);
 		if (match(TokenKind.ID)) {
 			next();
-			var vars = new ArrayList<Type>();
 			if (Type.isPrimitive(top.text)) {
 				return Type.toPrimitive(top.text);
+			}
+			if (Character.isUpperCase(top.text.charAt(0))) {
+				return new NamedType(top);
 			}
 			return new TypeVariable(top, true);
 		}
@@ -773,7 +824,7 @@ public class Parser {
 			return new Tuple(nodes);
 		}
 		expect(TokenKind.RPAREN, "Expected `)` after expression in group expression, `" + peek(0).text + "` found instead");
-		return node;
+		return new GroupExpression(node);
 	}
 
 	private Ast ternary() {
@@ -888,7 +939,7 @@ public class Parser {
 			&& !match(TokenKind.KEYWORD) && !match(TokenKind.BOOLEAN_OPERATOR) && !match(TokenKind.RBRACE)
 			&& !match(TokenKind.ADDITIVE_OPERATOR) && !match(TokenKind.MULTPLICATIVE_OPERATOR) && !match(TokenKind.COLON) && !match(TokenKind.ARROW)
 			&& !match(TokenKind.STR_CONCAT_OPERATOR) && !match(TokenKind.PIPE) && !match(TokenKind.KEYWORD) && !match(TokenKind.SEMI_COLON)
-			&& !match(TokenKind.DOT);
+			&& !match(TokenKind.DOT) && !match(TokenKind.HASH);
 	}
 
 	private Ast call() {
