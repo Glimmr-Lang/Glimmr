@@ -50,7 +50,7 @@ public class TypeChecker {
 				String name = func.func.name.text;
 				functionTable.put(name, func.func);
 				checkedFunctions.put(name, true);
-				
+
 				// Create a proper function type for extern functions
 				// instead of just using the return type
 				List<Type> argTypes = new ArrayList<>();
@@ -62,14 +62,13 @@ public class TypeChecker {
 						argTypes.add(freshTypeVar(arg.name));
 					}
 				}
-				
+
 				// Use the return type specified in the function
 				Type returnType = func.func.type != null ? func.func.type : freshTypeVar(func.func.name);
-				
+
 				// Create and store the function type
 				functionTypes.put(name, new FunctionType(argTypes, returnType));
-			} 
-			else if (node instanceof RFunction func) {
+			} else if (node instanceof RFunction func) {
 				String name = func.name.text;
 				functionTable.put(name, func);
 				checkedFunctions.put(name, false);
@@ -120,11 +119,13 @@ public class TypeChecker {
 			}
 		}
 
+		/*
 		for (var kv: functionTypes.entrySet()) {
 			var name = kv.getKey();
 			var type = kv.getValue(); 
 			System.out.println("fn " + name + " : " + type);
 		}
+		 */
 		// Print results
 	}
 
@@ -132,7 +133,7 @@ public class TypeChecker {
 	private TypeVariable freshTypeVar(Token token) {
 		return new TypeVariable(token);
 	}
-	
+
 	private TypeVariable freshTypeVar(Span span) {
 		return new TypeVariable(span);
 	}
@@ -169,6 +170,8 @@ public class TypeChecker {
 			return inferUnit((Unit) node);
 		} else if (node instanceof FieldAccess) {
 			return inferFieldAccess((FieldAccess) node);
+		} else if (node instanceof GroupExpression expr) {
+			return inferGroupExpression(expr);
 		} else {
 			// For other node types, report an error
 			Token token = getTokenFromAst(node);
@@ -178,10 +181,15 @@ public class TypeChecker {
 		}
 	}
 
+	private CheckedNode inferGroupExpression(GroupExpression expr) {
+		var result = infer(expr.expr);
+		return new CheckedNode(result.type, expr);
+	}
+
 	private CheckedNode inferFieldAccess(FieldAccess fieldAccess) {
 		var expr = infer(fieldAccess.obj);
 		var expr_type = expr.type;
-		
+
 		if (!(expr_type instanceof ObjectType) && !(expr_type instanceof TypeVariable)) {
 			Token token = getTokenFromAst(fieldAccess.obj);
 			Errors.reportTypeCheckError(token, "Field access is not valid for an expression of type " + expr_type + ". Field access only works for object types");
@@ -193,25 +201,25 @@ public class TypeChecker {
 		if (expr_type instanceof TypeVariable) {
 			// Create a fresh type variable for the field type
 			TypeVariable fieldType = freshTypeVar(fieldAccess.field.value);
-			
+
 			// Create an object type with just the accessed field
 			HashMap<Token, Type> fields = new HashMap<>();
 			fields.put(fieldAccess.field.value, fieldType);
 			var constraintType = new ObjectType(fields);
-			
+
 			try {
 				// Unify the expression with our constraint object type
 				unify(expr_type, constraintType, fieldAccess);
 				applyAllSubstitutions();
-				
+
 				// Get the updated field type after unification
 				Type resultType = applySubstitutions(fieldType);
 				return new CheckedNode(resultType, fieldAccess);
 			} catch (TypeMismatchError e) {
 				Errors.reportTypeCheckError(
-					fieldAccess.field.value, 
-					"Cannot access field '" + fieldAccess.field.value.text + 
-					"' on expression of type " + expr_type
+					fieldAccess.field.value,
+					"Cannot access field '" + fieldAccess.field.value.text
+					+ "' on expression of type " + expr_type
 				);
 				System.exit(0);
 				return null;
@@ -263,6 +271,9 @@ public class TypeChecker {
 			var top = exprs.get(i);
 			infer(top);
 		}
+		if (exprs.isEmpty()) {
+			return new CheckedNode(new UnitType(), block);
+		}
 		return infer(exprs.getLast());
 	}
 
@@ -306,8 +317,8 @@ public class TypeChecker {
 
 		// Check if it's a constructor (starts with uppercase letter)
 		if (Character.isUpperCase(name.charAt(0))) {
-			// This is a variant constructor
-			return new CheckedNode(new AppType(id.value, List.of()), id);
+			// This is a variant constructor or named type
+			return new CheckedNode(new NamedType(id.value), id);
 		}
 
 		// Check if it's a function
@@ -928,7 +939,6 @@ public class TypeChecker {
 		// Regular function call processing
 		CheckedNode funcChecked = infer(call.expr);
 		Type funcType = funcChecked.type;
-		
 
 		// Check that the function type is a function
 		if (!(funcType instanceof FunctionType)) {
@@ -943,8 +953,25 @@ public class TypeChecker {
 		// Apply arguments one by one
 		Type resultType = ft;
 
+		// Handle functions that return closures (auto-currying)
+		// If function takes no args but returns a function, treat it like auto-currying
+		if (ft.args.isEmpty() && ft.type instanceof FunctionType) {
+			// Get the function that would be returned
+			resultType = ft.type;
+			ft = (FunctionType) resultType;
+		}
+
 		// Check if number of arguments provided matches or is less than expected
 		if (call.params.size() > ft.args.size()) {
+
+			if (call.params.size() == 1 && ft.args.size() == 0) {
+				Ast argAst = call.params.get(0);
+				CheckedNode argChecked = infer(argAst);
+				if (argChecked.type instanceof UnitType unit) {
+					return new CheckedNode(unit, call);
+				}
+			}
+
 			Errors.reportTypeCheckError(getTokenFromAst(call.expr),
 				"Too many arguments provided to function call");
 			System.exit(0);
@@ -1048,11 +1075,39 @@ public class TypeChecker {
 		t1 = applySubstitutions(t1);
 		t2 = applySubstitutions(t2);
 
-		// Resolve type aliases
-		t1 = resolveTypeAlias(t1);
-		t2 = resolveTypeAlias(t2);
-
 		if (t1.equals(t2)) {
+			return;
+		}
+
+		// Handle NamedType unification
+		if (t1 instanceof NamedType && t2 instanceof NamedType) {
+			NamedType nt1 = (NamedType) t1;
+			NamedType nt2 = (NamedType) t2;
+
+			// Named types must match exactly by name
+			if (!nt1.name.text.equals(nt2.name.text)) {
+				throw new TypeMismatchError(nt1 + " is not compatible with " + nt2);
+			}
+			return;
+		}
+
+		// Special case: NamedType can't unify with concrete types
+		if ((t1 instanceof NamedType && isPrimitiveType(t2))
+			|| (t2 instanceof NamedType && isPrimitiveType(t1))) {
+			throw new TypeMismatchError("Named type ("
+				+ (t1 instanceof NamedType ? t1 : t2)
+				+ ") cannot be unified with primitive type ("
+				+ (isPrimitiveType(t1) ? t1 : t2) + ")");
+		}
+
+		// Handle TypeVariable with NamedType (only TypeVariable can be substituted)
+		if (t1 instanceof TypeVariable && t2 instanceof NamedType) {
+			substituteTypeVar((TypeVariable) t1, t2);
+			return;
+		}
+
+		if (t2 instanceof TypeVariable && t1 instanceof NamedType) {
+			substituteTypeVar((TypeVariable) t2, t1);
 			return;
 		}
 
@@ -1268,11 +1323,11 @@ public class TypeChecker {
 		do {
 			changed = false;
 
-			// Resolve type aliases only if user-defined
-			if (result instanceof TypeVariable) {
-				TypeVariable tv = (TypeVariable) result;
-				if (tv.is_user_defined && typeAliases.containsKey(tv.name.text)) {
-					result = typeAliases.get(tv.name.text).type;
+			// Handle NamedType - only resolve if it's a type alias
+			if (result instanceof NamedType) {
+				NamedType nt = (NamedType) result;
+				if (typeAliases.containsKey(nt.name.text)) {
+					result = typeAliases.get(nt.name.text).type;
 					changed = true;
 					continue;
 				}
@@ -1364,6 +1419,11 @@ public class TypeChecker {
 
 	// Check if a type variable occurs in a type (occurs check)
 	private boolean occursIn(TypeVariable tv, Type type) {
+		// Add special case for NamedType
+		if (type instanceof NamedType) {
+			return false; // A TypeVariable can't occur in a NamedType
+		}
+
 		if (type instanceof TypeVariable) {
 			return tv.equals(type);
 		}
@@ -1410,6 +1470,12 @@ public class TypeChecker {
 
 	// Substitute a type variable in a type with another type
 	private Type substituteInType(Type type, TypeVariable tv, Type replacement) {
+		// Add special case for NamedType
+		if (type instanceof NamedType) {
+			// NamedType shouldn't be substituted directly
+			return type;
+		}
+
 		if (type instanceof TypeVariable) {
 			if (tv.equals(type)) {
 				return replacement;
@@ -1642,11 +1708,10 @@ public class TypeChecker {
 
 	// New method to resolve type aliases
 	private Type resolveTypeAlias(Type type) {
-		if (type instanceof TypeVariable) {
-			TypeVariable tv = (TypeVariable) type;
-			// Only resolve if it's a user-defined type variable
-			if (tv.is_user_defined && typeAliases.containsKey(tv.name.text)) {
-				return typeAliases.get(tv.name.text).type;
+		if (type instanceof NamedType) {
+			NamedType nt = (NamedType) type;
+			if (typeAliases.containsKey(nt.name.text)) {
+				return typeAliases.get(nt.name.text).type;
 			}
 		}
 		return type;
