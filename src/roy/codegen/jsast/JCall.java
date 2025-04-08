@@ -22,6 +22,11 @@ public class JCall implements CodegenAst {
 		sb
 			.append(expr.toString())
 			.append(" ");
+
+		if (params.isEmpty()) {
+			sb.append("()");
+		}
+		
 		for (var stmt : params) {
 			sb
 				.append("(")

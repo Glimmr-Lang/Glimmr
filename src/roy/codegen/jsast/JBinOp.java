@@ -9,7 +9,7 @@ public class JBinOp implements CodegenAst {
 	private CodegenAst lhs, rhs;
 
 	public JBinOp(String op, CodegenAst lhs, CodegenAst rhs) {
-		this.op = op;
+		this.op = op.equals("++") ? "+" : op;
 		this.lhs = lhs;
 		this.rhs = rhs;
 	}

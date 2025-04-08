@@ -4,15 +4,18 @@ package roy.codegen.jsast;
  *
  * @author hexaredecimal
  */
-public class JIdentifier implements CodegenAst {
-	private String value;
+public class JFieldAccess implements CodegenAst {
+	public CodegenAst expr;
+	public String field; 
 
-	public JIdentifier(String value) {
-		this.value = value;
+	public JFieldAccess(CodegenAst expr, String field) {
+		this.expr = expr;
+		this.field = field;
 	}
+
 
 	@Override
 	public String toString() {
-		return String.format("%s", value);
+		return String.format("%s.%s", expr, field);
 	}
 }
