@@ -47,55 +47,65 @@ public class TypeChecker {
 			if (node instanceof TypeAlias alias) {
 				typeAliases.put(alias.name.text, alias);
 			} else if (node instanceof AnnotatedFunction func && func.isExtern) {
-				String name = func.func.name.text;
-				functionTable.put(name, func.func);
-				checkedFunctions.put(name, true);
-
-				// Create a proper function type for extern functions
-				// instead of just using the return type
-				List<Type> argTypes = new ArrayList<>();
-				for (Arg arg : func.func.args) {
-					if (arg.type != null) {
-						argTypes.add(arg.type);
-					} else {
-						// Extern functions must have explicit types, but just in case
-						argTypes.add(freshTypeVar(arg.name));
-					}
-				}
-
-				// Use the return type specified in the function
-				Type returnType = func.func.type != null ? func.func.type : freshTypeVar(func.func.name);
-
-				// Create and store the function type
-				functionTypes.put(name, new FunctionType(argTypes, returnType));
+				addExternFunction(func);
+			} else if (node instanceof AnnotatedFunction func && func.isExport) {
+				addFunction(func.func);
 			} else if (node instanceof RFunction func) {
-				String name = func.name.text;
-				functionTable.put(name, func);
-				checkedFunctions.put(name, false);
+				addFunction(func);
+			}
+		}
+	}
 
-				// Create a skeleton function type with fresh type variables
-				List<Type> argTypes = new ArrayList<>();
-				for (Arg arg : func.args) {
-					if (arg.type != null) {
-						argTypes.add(arg.type);
-					} else {
-						argTypes.add(freshTypeVar(arg.name));
-					}
-				}
+	private void addExternFunction(AnnotatedFunction func) {
+		String name = func.func.name.text;
+		functionTable.put(name, func.func);
+		checkedFunctions.put(name, true);
 
-				Type returnType = func.type != null ? func.type : freshTypeVar(func.name);
-				functionTypes.put(name, new FunctionType(argTypes, returnType));
+		// Create a proper function type for extern functions
+		// instead of just using the return type
+		List<Type> argTypes = new ArrayList<>();
+		for (Arg arg : func.func.args) {
+			if (arg.type != null) {
+				argTypes.add(arg.type);
+			} else {
+				// Extern functions must have explicit types, but just in case
+				argTypes.add(freshTypeVar(arg.name));
+			}
+		}
 
-				// Resolve any type aliases in function signature
-				if (func.type != null) {
-					func.type = resolveTypeAlias(func.type);
-				}
+		// Use the return type specified in the function
+		Type returnType = func.func.type != null ? func.func.type : freshTypeVar(func.func.name);
 
-				for (Arg arg : func.args) {
-					if (arg.type != null) {
-						arg.type = resolveTypeAlias(arg.type);
-					}
-				}
+		// Create and store the function type
+		functionTypes.put(name, new FunctionType(argTypes, returnType));
+	}
+
+	private void addFunction(RFunction func) {
+		String name = func.name.text;
+		functionTable.put(name, func);
+		checkedFunctions.put(name, false);
+
+		// Create a skeleton function type with fresh type variables
+		List<Type> argTypes = new ArrayList<>();
+		for (Arg arg : func.args) {
+			if (arg.type != null) {
+				argTypes.add(arg.type);
+			} else {
+				argTypes.add(freshTypeVar(arg.name));
+			}
+		}
+
+		Type returnType = func.type != null ? func.type : freshTypeVar(func.name);
+		functionTypes.put(name, new FunctionType(argTypes, returnType));
+
+		// Resolve any type aliases in function signature
+		if (func.type != null) {
+			func.type = resolveTypeAlias(func.type);
+		}
+
+		for (Arg arg : func.args) {
+			if (arg.type != null) {
+				arg.type = resolveTypeAlias(arg.type);
 			}
 		}
 	}
@@ -968,6 +978,8 @@ public class TypeChecker {
 				Ast argAst = call.params.get(0);
 				CheckedNode argChecked = infer(argAst);
 				if (argChecked.type instanceof UnitType unit) {
+					call.auto = true;
+					call.params.removeLast();
 					return new CheckedNode(unit, call);
 				}
 			}
