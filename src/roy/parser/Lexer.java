@@ -248,6 +248,25 @@ public class Lexer {
 	private void collectOperator(char top) {
 		StringBuilder sb = new StringBuilder();
 
+		// Single line comment support
+		if (top == '/' && peek(0) == '/') {
+			top = next();
+			while (top != '\n' && !code.isEmpty()) 
+				top = next();
+			return;
+		}
+
+		// Multiline comment support
+		if (top == '/' && peek(0) == '*') {
+			next();
+			while (top != '*' && peek(0) != '/' && !code.isEmpty()) 
+				top = next();
+			next();
+			next();
+			return;
+		}
+
+
 		sb.append(top);
 		var peeked = peek(0);
 		if (OPERATORS.containsKey(sb.toString() + peeked)) {
