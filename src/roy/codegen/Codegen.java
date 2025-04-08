@@ -2,12 +2,14 @@ package roy.codegen;
 
 import java.lang.invoke.CallSite;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import roy.ast.AnnotatedFunction;
 import roy.ast.Ast;
 import roy.ast.BinOp;
 import roy.ast.Block;
 import roy.ast.Call;
+import roy.ast.FieldAccess;
 import roy.ast.GroupExpression;
 import roy.ast.Identifier;
 import roy.ast.IfElse;
@@ -16,6 +18,7 @@ import roy.ast.LetIn;
 import roy.ast.Number;
 import roy.ast.RClosure;
 import roy.ast.RFunction;
+import roy.ast.RObject;
 import roy.ast.RString;
 import roy.ast.Unit;
 import roy.codegen.jsast.CodegenAst;
@@ -29,6 +32,8 @@ import roy.codegen.jsast.JIfElse;
 import roy.codegen.jsast.JLetExpression;
 import roy.codegen.jsast.JStatementList;
 import roy.codegen.jsast.JCall;
+import roy.codegen.jsast.JFieldAccess;
+import roy.codegen.jsast.JObject;
 import roy.codegen.jsast.JStringCodeEmbed;
 import roy.codegen.jsast.NumberLiteral;
 import roy.codegen.jsast.StringLiteral;
@@ -56,7 +61,7 @@ public class Codegen {
 
 		}
 	}
-	
+
 	private void codegenAnnotatedFunction(AnnotatedFunction afunc) {
 		var func = afunc.func;
 		var name = func.name.text;
@@ -66,7 +71,11 @@ public class Codegen {
 		var arg_name = arg == null ? "" : arg.name.text;
 		var fx = new JFunction(name, arg_name, body);
 		fx.export = afunc.isExport;
-		System.out.println("" + fx);
+		if (name.equals("main")) {
+			System.out.println("" + fx + "\nmain();");
+		} else {
+			System.out.println("" + fx);
+		}
 	}
 
 	private void codegenFunction(RFunction func) {
@@ -76,14 +85,18 @@ public class Codegen {
 
 		var arg_name = arg == null ? "" : arg.name.text;
 		var fx = new JFunction(name, arg_name, body);
-		System.out.println("" + fx);
+		if (name.equals("main")) {
+			System.out.println("" + fx + "\nmain();");
+		} else {
+			System.out.println("" + fx);
+		}
 	}
 
 	private CodegenAst codegenExpr(Ast expr) {
 		if (expr instanceof roy.ast.Number number) {
 			return codegenNumber(number);
 		}
-		
+
 		if (expr instanceof Unit unit) {
 			return codegenUnit(unit);
 		}
@@ -128,14 +141,35 @@ public class Codegen {
 			return codegenString(string);
 		}
 
+		if (expr instanceof RObject obj) {
+			return codegenObject(obj);
+		}
+
+		if (expr instanceof FieldAccess fa) {
+			return codegenFieldAccess(fa);
+		}
+
 		It.todo(expr.getClass().getName());
 		return null;
+	}
+
+	private CodegenAst codegenFieldAccess(FieldAccess field) {
+		var expr = codegenExpr(field.obj);
+		return new JFieldAccess(expr, field.field.value.text);
+	}
+
+	private CodegenAst codegenObject(RObject obj) {
+		HashMap<String, CodegenAst> _obj = new HashMap<>();
+		for (var kv : obj.obj.entrySet()) {
+			var expr = codegenExpr(kv.getValue());
+			_obj.put(kv.getKey().text, expr);
+		}
+		return new JObject(_obj);
 	}
 
 	private CodegenAst codegenString(RString string) {
 		return new StringLiteral(string.value.text);
 	}
-
 
 	private CodegenAst codegenJsCode(JSCode code) {
 		return new JStringCodeEmbed(code.code);
@@ -148,7 +182,7 @@ public class Codegen {
 	private CodegenAst codegenCall(Call call) {
 		List<CodegenAst> params = new ArrayList<>();
 		var expr = codegenExpr(call.expr);
-		for (var param: call.params) {
+		for (var param : call.params) {
 			params.add(codegenExpr(param));
 		}
 		return new JCall(expr, params);
