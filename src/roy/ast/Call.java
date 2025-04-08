@@ -10,10 +10,12 @@ import roy.tokens.Token;
 public class Call implements Ast {
 	public Ast expr; 
 	public List<Ast> params;
+	public boolean auto;
 
 	public Call(Ast expr, List<Ast> params) {
 		this.expr = expr;
 		this.params = params;
+		this.auto = false;
 	}
 
 	
