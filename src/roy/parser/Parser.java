@@ -73,7 +73,7 @@ public class Parser {
 		while (!tokens.isEmpty() && top.kind != TokenKind.EOF) {
 			top = peek(0);
 			if (err_loops > 0) {
-				Errors.reportSyntaxError(top, "Invalid token encountered: " + peek(0).kind);
+				Errors.reportSyntaxError(top, "Invalid token encountered: " + peek(0).text);
 			}
 
 			if (match(TokenKind.KEYWORD) && top.text == "fn") {
@@ -261,7 +261,7 @@ public class Parser {
 		if (!Character.isUpperCase(name.text.charAt(0))) {
 			Errors.reportSyntaxError(name, "Type aliases are must start with an uppercase letter");
 		}
-		expect(TokenKind.ASSIGN, "Expected a `=` after the alias name" + peek(0));
+		expect(TokenKind.ASSIGN, "Expected a `=` after the alias name");
 		var t = peek(0);
 
 		if (t.kind == TokenKind.EOF) {
