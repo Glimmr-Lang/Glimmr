@@ -19,9 +19,9 @@ public class JClosure implements CodegenAst {
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
 		sb
-			.append("(")
+			.append("function (")
 			.append(arg.toString())
-			.append(") => {")
+			.append(") {")
 			.append("\n");
 		if (no_return) {
 			sb.append(body.toString().indent(4));
