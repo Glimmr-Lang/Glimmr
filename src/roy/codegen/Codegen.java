@@ -17,6 +17,7 @@ import roy.ast.Identifier;
 import roy.ast.IfElse;
 import roy.ast.JSCode;
 import roy.ast.LetIn;
+import roy.ast.ModuleAccess;
 import roy.ast.Number;
 import roy.ast.RClosure;
 import roy.ast.RFunction;
@@ -199,8 +200,17 @@ public class Codegen {
 			return codegenFieldAccess(fa);
 		}
 
+		if (expr instanceof ModuleAccess ma) {
+			return codegenModuleAccess(ma);
+		}
+
 		It.todo(expr.getClass().getName());
 		return null;
+	}
+
+	private CodegenAst codegenModuleAccess(ModuleAccess ma) {
+		//var expr = codegenExpr(ma.module);
+		return new JIdentifier(ma.field.value.text);
 	}
 
 	private CodegenAst codegenFieldAccess(FieldAccess field) {
