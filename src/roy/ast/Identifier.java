@@ -8,9 +8,11 @@ import roy.tokens.Token;
  */
 public class Identifier implements Ast {
 	public Token value;
+	public boolean sum;
 
 	public Identifier(Token value) {
 		this.value = value;
+		this.sum = false;
 	}
 
 	
