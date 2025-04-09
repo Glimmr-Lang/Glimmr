@@ -1,12 +1,14 @@
 package roy.typechecker;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import roy.ast.*;
+import roy.codegen.jsast.JFunctionObject;
 import roy.errors.Errors;
-import roy.rt.It;
 import roy.tokens.Span;
 import roy.tokens.Token;
 import roy.tokens.TokenKind;
@@ -26,6 +28,7 @@ public class TypeChecker {
 	private Map<String, Boolean> checkedFunctions; // Track which functions have been checked
 	private Map<String, Type> functionTypes; // Store function types separately
 	private Map<String, TypeAlias> typeAliases; // Store type aliases or named types
+	private Map<String, JFunctionObject> sumTypes; // Holds sumtypes that are going to be codegened
 
 	public TypeChecker(List<Ast> nodes) {
 		this.nodes = nodes;
@@ -36,9 +39,37 @@ public class TypeChecker {
 		this.functionTypes = new HashMap<>();
 		this.localSymbolTable = new HashMap<>();
 		this.typeAliases = new HashMap<>();
+		this.sumTypes = new HashMap<>();
 
 		// First pass: register all functions in the function table
 		registerFunctionsAndTypes();
+	}
+
+	public TypeChecker() {
+		this.typeEnv = new HashMap<>();
+		this.substitutions = new HashMap<>();
+		this.functionTable = new HashMap<>();
+		this.checkedFunctions = new HashMap<>();
+		this.functionTypes = new HashMap<>();
+		this.localSymbolTable = new HashMap<>();
+		this.typeAliases = new HashMap<>();
+		this.sumTypes = new HashMap<>();
+	}
+
+	public void repl(List<Ast> nodes) {
+		this.nodes = nodes;
+	}
+
+	public String getSumTypes() {
+		List<JFunctionObject> list = new ArrayList<>();
+		for (var value : sumTypes.values()) {
+			list.add(value);
+		}
+
+
+		return Arrays.stream(list.toArray())
+			.map(Object::toString)
+			.collect(Collectors.joining("\n"));
 	}
 
 	// First pass: collect all function declarations
@@ -60,22 +91,27 @@ public class TypeChecker {
 		String name = func.func.name.text;
 		functionTable.put(name, func.func);
 		checkedFunctions.put(name, true);
-
+		
 		// Create a proper function type for extern functions
-		// instead of just using the return type
 		List<Type> argTypes = new ArrayList<>();
 		for (Arg arg : func.func.args) {
 			if (arg.type != null) {
 				argTypes.add(arg.type);
 			} else {
-				// Extern functions must have explicit types, but just in case
+				// Extern functions must have explicit types
 				argTypes.add(freshTypeVar(arg.name));
 			}
 		}
-
+		
+		// Handle the special case for no arguments - never allow an extern function to have zero arguments
+		if (argTypes.isEmpty() && func.func.body instanceof JSCode) {
+			// If there are no arguments but it's clearly meant to take arguments, add a generic type
+			argTypes.add(new TypeVariable(new Token(TokenKind.ID, "a", func.func.name.span)));
+		}
+		
 		// Use the return type specified in the function
 		Type returnType = func.func.type != null ? func.func.type : freshTypeVar(func.func.name);
-
+		
 		// Create and store the function type
 		functionTypes.put(name, new FunctionType(argTypes, returnType));
 	}
@@ -112,7 +148,9 @@ public class TypeChecker {
 
 	public void process() {
 		// Process all function declarations to set their types
-		for (Map.Entry<String, RFunction> entry : functionTable.entrySet()) {
+		var arr = functionTable.entrySet().stream().toList();
+		for (int i = 0; i < arr.size(); i++) {
+			var entry = arr.get(i);
 			// Create completely new maps for each function
 			substitutions = new HashMap<>();
 			typeEnv = new HashMap<>();
@@ -139,6 +177,13 @@ public class TypeChecker {
 		// Print results
 	}
 
+	public Type inferProcess() {
+		if (nodes.getFirst() instanceof TypeAlias ta) {
+			return ta.type;
+		}
+
+		return infer(nodes.getFirst()).type;
+	}
 	// Create a fresh type variable using a token
 	private TypeVariable freshTypeVar(Token token) {
 		return new TypeVariable(token);
@@ -255,6 +300,10 @@ public class TypeChecker {
 	}
 
 	private CheckedNode inferUnit(Unit unit) {
+		if (!sumTypes.containsKey("Unit")) {
+			var t = new JFunctionObject("Unit", 0);
+			sumTypes.put("Unit", t);
+		}
 		return new CheckedNode(new UnitType(), unit);
 	}
 
@@ -302,10 +351,25 @@ public class TypeChecker {
 			return ((RFunction) ast).name;
 		} else if (ast instanceof Call) {
 			return getTokenFromAst(((Call) ast).expr);
-		}
-		// Default to the first token we can find
-		if (ast instanceof IfElse) {
-			return getTokenFromAst(((IfElse) ast).cond);
+		} else if (ast instanceof RClosure node) {
+			return node.name;
+		} else if (ast instanceof IfElse ief) {
+			return getTokenFromAst(ief.cond);
+		} else if (ast instanceof RObject obj) {
+			var first = (Ast) obj.obj.values().toArray()[0];
+			return getTokenFromAst(first);
+		} else if (ast instanceof Tuple tupl) {
+			return getTokenFromAst(tupl.values.getFirst());
+		} else if (ast instanceof Block block) {
+			return getTokenFromAst(block.exprs.getFirst());
+		} else if (ast instanceof LetIn let) {
+			return getTokenFromAst(let.lets.getFirst());
+		} else if (ast instanceof Unit unit) {
+			return new Token(TokenKind.LPAREN, "()");
+		} else if (ast instanceof FieldAccess fa) {
+			return getTokenFromAst(fa.field);
+		} else if (ast instanceof GroupExpression expr) {
+			return getTokenFromAst(expr.expr);
 		}
 
 		// Fallback in case we can't extract a token
@@ -327,6 +391,11 @@ public class TypeChecker {
 
 		// Check if it's a constructor (starts with uppercase letter)
 		if (Character.isUpperCase(name.charAt(0))) {
+			if (!sumTypes.containsKey(name)) {
+				var t = new JFunctionObject(name, 0);
+				sumTypes.put(name, t);
+			}
+			id.sum = true;
 			// This is a variant constructor or named type
 			return new CheckedNode(new NamedType(id.value), id);
 		}
@@ -932,8 +1001,8 @@ public class TypeChecker {
 		if (call.expr instanceof Identifier id
 			&& !functionTable.containsKey(id.value.text)
 			&& Character.isUpperCase(id.value.text.charAt(0))) {
-			String name = id.value.text;
 			// This is a variant constructor application
+			String name = id.value.text;
 			List<Type> argTypes = new ArrayList<>();
 
 			// Infer types for all arguments
@@ -942,62 +1011,67 @@ public class TypeChecker {
 				argTypes.add(argChecked.type);
 			}
 
+			if (sumTypes.containsKey(name)) {
+				var t = sumTypes.get(name);
+				t.arity = Math.max(call.params.size(), t.arity);
+				sumTypes.put(name, t);
+			} else {
+				var t = new JFunctionObject(name, call.params.size());
+				sumTypes.put(name, t);
+			}
+
+			call.sum = true;
 			// Create an AppType with the constructor name and argument types
 			// Simple case: Single argument constructor (e.g., Some a)
 			return new CheckedNode(new AppType(id.value, argTypes), call);
 		}
+		
 		// Regular function call processing
 		CheckedNode funcChecked = infer(call.expr);
 		Type funcType = funcChecked.type;
-
+		
 		// Check that the function type is a function
 		if (!(funcType instanceof FunctionType)) {
-			Errors.reportTypeCheckError(getTokenFromAst(call.expr),
-				"Cannot call a non-function type: " + funcType);
-			System.exit(0);
-			return null;
+			// Handle functions that return closures (auto-currying)
+			if (funcType instanceof FunctionType ft && ft.args.isEmpty() && ft.type instanceof FunctionType) {
+				funcType = ft.type;
+			} else {
+				Errors.reportTypeCheckError(getTokenFromAst(call.expr),
+					"Cannot call a non-function type: " + funcType);
+				System.exit(0);
+				return null;
+			}
 		}
 
 		FunctionType ft = (FunctionType) funcType;
-
-		// Apply arguments one by one
 		Type resultType = ft;
 
-		// Handle functions that return closures (auto-currying)
-		// If function takes no args but returns a function, treat it like auto-currying
-		if (ft.args.isEmpty() && ft.type instanceof FunctionType) {
-			// Get the function that would be returned
-			resultType = ft.type;
-			ft = (FunctionType) resultType;
-		}
-
-		// Check if number of arguments provided matches or is less than expected
-		if (call.params.size() > ft.args.size()) {
-
-			if (call.params.size() == 1 && ft.args.size() == 0) {
-				Ast argAst = call.params.get(0);
-				CheckedNode argChecked = infer(argAst);
-				if (argChecked.type instanceof UnitType unit) {
-					call.auto = true;
-					call.params.removeLast();
-					return new CheckedNode(unit, call);
-				}
+		if (call.params.size() == 1 && ft.args.size() == 0) {
+			Ast argAst = call.params.get(0);
+			CheckedNode argChecked = infer(argAst);
+			if (argChecked.type instanceof UnitType unit) {
+				call.auto = true;
+				call.params.removeLast();
+				return new CheckedNode(unit, call);
 			}
-
-			Errors.reportTypeCheckError(getTokenFromAst(call.expr),
-				"Too many arguments provided to function call");
-			System.exit(0);
-			return null;
 		}
-
+		
 		// Process each argument
 		for (int i = 0; i < call.params.size(); i++) {
-			// If we've processed all the arguments of current function type, error
+			// We need to ensure we have a function type for each argument
 			if (!(resultType instanceof FunctionType)) {
-				Errors.reportTypeCheckError(getTokenFromAst(call.expr),
-					"Too many arguments provided to function call");
-				System.exit(0);
-				return null;
+				// Check if this is a multi-argument call on a curried function chain
+				if (i > 0) {
+					// Instead of error, we'll create a new call with remaining arguments
+					Ast funcExpr = new Call(call.expr, call.params.subList(0, i));
+					List<Ast> remainingArgs = call.params.subList(i, call.params.size());
+					return inferCall(new Call(funcExpr, remainingArgs));
+				} else {
+					Errors.reportTypeCheckError(getTokenFromAst(call.expr),
+						"Too many arguments provided to function call");
+					System.exit(0);
+					return null;
+				}
 			}
 
 			ft = (FunctionType) resultType;
@@ -1005,11 +1079,8 @@ public class TypeChecker {
 			CheckedNode argChecked = infer(argAst);
 			Type argType = argChecked.type;
 
-			// Simply unify the argument type with the parameter type
 			try {
 				unify(ft.args.get(0), argType, argAst);
-
-				// Apply substitutions after each argument
 				applyAllSubstitutions();
 			} catch (TypeMismatchError e) {
 				Errors.reportTypeCheckError(getTokenFromAst(argAst),
@@ -1026,9 +1097,8 @@ public class TypeChecker {
 			}
 		}
 
-		// Apply substitutions to the result to ensure type variables are replaced
+		// Apply substitutions to the result
 		resultType = applySubstitutions(resultType);
-
 		return new CheckedNode(resultType, call);
 	}
 
