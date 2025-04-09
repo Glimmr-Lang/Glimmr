@@ -103,6 +103,20 @@ public class Lexer {
 		errors = new ArrayList<>();
 	}
 
+	public Lexer(String code, String filename) {
+		this.filename = filename;
+		this.code =	code.chars()
+			.boxed()
+			.map((f) -> (char) f.intValue())
+			.collect(Collectors.toList());
+		line = 1;
+		column = 1;
+		tokens = new ArrayList<>();
+		errors = new ArrayList<>();
+
+	}
+	
+
 	public List<Token> lex() {
 		while (!code.isEmpty()) {
 			tmpCol = column;
