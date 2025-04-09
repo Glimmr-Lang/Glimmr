@@ -1,9 +1,12 @@
 package roy.parser;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import roy.ast.AnnotatedFunction;
 import roy.ast.AnyPattern;
@@ -26,10 +29,13 @@ import roy.ast.LetIn;
 import roy.ast.ListPattern;
 import roy.ast.Match;
 import roy.ast.MatchCase;
+import roy.ast.ModuleAccess;
 import roy.ast.ObjectPattern;
 import roy.ast.Pattern;
+import roy.ast.RAstList;
 import roy.ast.RClosure;
 import roy.ast.RFunction;
+import roy.ast.RModule;
 import roy.ast.RObject;
 import roy.ast.RString;
 import roy.ast.Tuple;
@@ -42,6 +48,7 @@ import roy.fs.Fs;
 import roy.rt.It;
 import roy.tokens.Token;
 import roy.tokens.TokenKind;
+import roy.typechecker.TypeChecker;
 import roy.types.AppType;
 import roy.types.FunctionType;
 import roy.types.ListType;
@@ -84,6 +91,17 @@ public class Parser {
 
 			if (match(TokenKind.KEYWORD) && top.text == "type") {
 				nodes.add(typeAlias());
+				err_loops = 0;
+				continue;
+			}
+
+			if (match(TokenKind.KEYWORD) && top.text == "import") {
+				var node = importModule();
+				if (node instanceof RAstList list) {
+					nodes.addAll(list.decls);
+				} else {
+					nodes.add(node);
+				}
 				err_loops = 0;
 				continue;
 			}
@@ -295,6 +313,119 @@ public class Parser {
 		return new RFunction(name, args, ret_type, body, where);
 	}
 
+	private Ast importModule() {
+		next();
+		List<String> path = new ArrayList<>();
+
+		var id = expect(TokenKind.ID, "expected identifier for module name");
+		path.add(id.text);
+
+		while (match(TokenKind.DBL_COLON)) {
+			next();
+			id = expect(TokenKind.ID, "expected identifier for module name");
+			path.add(id.text);
+		}
+
+		var import_path = "./" + String.join("/", path.toArray(String[]::new));
+
+		var mod = processImport(import_path, id);
+		if (match(TokenKind.LBRACE)) {
+			return extractNodes((RModule) mod, id);
+		}
+		return mod;
+	}
+
+	private Ast extractNodes(RModule module, Token id) {
+		next();
+
+		if (match(TokenKind.RBRACE)) {
+			expect(TokenKind.ERR, "Empty import list is not allowed. Remove the `{}`");
+		}
+
+		Set<Token> path = new HashSet<>();
+
+		while (!match(TokenKind.RBRACE)) {
+			var node = expect(TokenKind.ID, "expected identifier for function or type name");
+			checkDuplicates(node, path);
+			path.add(node);
+			if (match(TokenKind.RBRACE)) {
+				break;
+			}
+			expect(TokenKind.COMMA, "Expected a `,` between import items");
+		}
+		next();
+
+		List<Ast> lifted_nodes = new ArrayList<>();
+		for (var names : path) {
+			lifted_nodes.add(extractNode(module.name.text, module.decls, names));
+		}
+
+		return new RAstList(lifted_nodes);
+	}
+
+	private void checkDuplicates(Token name, Set<Token> nodes) {
+		for (var node : nodes) {
+			if (node.text.equals(name.text)) {
+				Errors.reportSyntaxError(name, "Duplicate entries are anot allowed");
+			}
+		}
+	}
+
+	private Ast extractNode(String module, List<Ast> nodes, Token name) {
+		for (var ast : nodes) {
+			if (ast instanceof RFunction func && func.name.text.equals(name.text)) {
+				return func;
+			}
+			if (ast instanceof AnnotatedFunction afunc && afunc.func.name.text.equals(name.text)) {
+				return afunc;
+			}
+			if (ast instanceof TypeAlias ta && ta.name.text.equals(name.text)) {
+				return ta;
+			}
+		}
+
+		Errors.reportSyntaxError(name, "No function or type named `" + name.text + "` found in module " + module);
+		It.unreachable();
+		return null;
+	}
+
+	private Ast processImport(String path, Token id) {
+		var fp = new File(path);
+		if (fp.isFile()) {
+			Errors.reportSyntaxError(id, "Import path leads to a file. Modules are expected to be directories");
+		}
+
+		List<Ast> nodes = new ArrayList<>();
+		for (var file : fp.listFiles()) {
+			if (file.getName().endsWith(".glmr")) {
+				var ip = file.getAbsolutePath();
+				nodes.addAll(_import(ip));
+			}
+		}
+
+		if (nodes.isEmpty()) {
+			Errors.reportSyntaxError(id, "Importing an empty module is reduntant, hence not allowed");
+		}
+
+		return new RModule(id, nodes);
+	}
+
+	private List<Ast> _import(String path) {
+		Lexer lexer = new Lexer(path);
+		var tokens = lexer.lex();
+
+		//tokens.forEach(System.out::println);
+		///*
+		var parser = new Parser(tokens);
+		var nodes = parser.parse();
+		//nodes.forEach(System.out::println);
+
+		var typechecker = new TypeChecker(nodes);
+		typechecker.process();
+
+		return nodes;
+	}
+
 	private Ast typeAlias() {
 		next();
 		var name = expect(TokenKind.ID, "Expected an identifier for type alias name after the `type` keyword");
@@ -472,10 +603,10 @@ public class Parser {
 	private Type parseFunctionType(Type first) {
 		// Already got the first type before the ->
 		next(); // Consume the ->
-		
+
 		// Parse the right-hand side (which could be another function type)
 		Type returnType = parseType();
-		
+
 		// Create a function type with the first type as the argument
 		// and the return type we just parsed
 		List<Type> argTypes = new ArrayList<>();
@@ -971,12 +1102,30 @@ public class Parser {
 		return result;
 	}
 
+	private Ast moduleAccess() {
+		var t0 = peek(0);
+		Ast result = fieldAccess();
+		while (true) {
+			if (match(TokenKind.DBL_COLON)) {
+				next();
+				if (!(result instanceof Identifier)) {
+					Errors.reportTypeCheckError(t0, "Expected an identifier at the left side of the `::`");
+				}
+				var t = peek(0);
+				if (match(TokenKind.ID)) {
+					next();
+
+					result = new ModuleAccess(result, new Identifier(t));
+					continue;
+				}
+			}
+			break;
+		}
+		return result;
+	}
+
 	private Ast unary() {
 		var op = peek(0);
-		if (match(TokenKind.ADDITIVE_OPERATOR) && op.text.equals("=")) {
-			It.todo("Unary");
-		}
-
 		if (match(TokenKind.ADDITIVE_OPERATOR) && op.text.equals("-")) {
 			next();
 			var lhs = expression();
@@ -986,7 +1135,7 @@ public class Parser {
 			return new BinOp(lhs, new roy.ast.Number(tok), op);
 		}
 
-		return call();
+		return moduleAccess();
 	}
 
 	private boolean isCallValid() {
@@ -1049,7 +1198,6 @@ public class Parser {
 		return result;
 	}
 
-	// New method to parse a term without function calls
 	private Ast parseTerm() {
 		// Parse a simple term (identifier, literal, etc.) without allowing it to include function calls
 
@@ -1072,7 +1220,7 @@ public class Parser {
 		// Allow full expressions for other cases, which might be needed for complex arguments
 		return multiplicative();
 	}
-
+	
 	private Ast conditional() {
 		var top = peek(0);
 		if (match(TokenKind.KEYWORD) && top.text.equals("if")) {
