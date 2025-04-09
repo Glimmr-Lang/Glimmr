@@ -42,6 +42,14 @@ public class JFunction implements CodegenAst {
 					sb.append(stmt.toString().indent(4));
 				}
 				sb.append(String.format("return %s", last).toString().indent(4));
+			} else if (body instanceof JBlock block) {
+				var last = block.statements.removeLast();
+				for (var stmt: block.statements) {
+					var s = stmt.toString();
+					sb.append(s.indent(4));
+					if (!s.endsWith(";")) sb.append(";");
+				}
+				sb.append(String.format("return %s", last).toString().indent(4));
 			}
 			else {
 				sb.append(String.format("return %s;", body).toString().indent(4));

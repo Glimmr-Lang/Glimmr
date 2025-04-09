@@ -21,7 +21,7 @@ public class JBlock implements CodegenAst {
 		}
 
 		StringBuilder sb = new StringBuilder();
-		sb.append("(() => {").append("\n");
+		sb.append("(function() {").append("\n");
 		CodegenAst last = null;
 		if (!statements.isEmpty()) {
 			last = statements.removeLast();

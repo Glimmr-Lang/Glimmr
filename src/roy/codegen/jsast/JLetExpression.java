@@ -16,6 +16,6 @@ public class JLetExpression implements CodegenAst {
 
 	@Override
 	public String toString() {
-		return String.format("let %s = %s;", name, value);
+		return String.format("var %s = %s;", name, value);
 	}
 }
