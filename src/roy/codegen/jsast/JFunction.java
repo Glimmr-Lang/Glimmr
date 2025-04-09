@@ -36,7 +36,14 @@ public class JFunction implements CodegenAst {
 			
 			if (body instanceof JStringCodeEmbed) {
 				sb.append(String.format(" %s", body).toString().indent(4));
-			} else {
+			} else  if (body instanceof JStatementList jsl) {
+				var last = jsl.statements.removeLast();
+				for (var stmt: jsl.statements) {
+					sb.append(stmt.toString().indent(4));
+				}
+				sb.append(String.format("return %s", last).toString().indent(4));
+			}
+			else {
 				sb.append(String.format("return %s;", body).toString().indent(4));
 			}
 			
