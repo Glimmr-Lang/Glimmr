@@ -68,6 +68,7 @@ public class Parser {
 	private List<Token> tokens;
 	private List<Ast> nodes;
 	private List<ErrorNode> errors;
+	public static List<Ast> typeAliases = new ArrayList<>();
 
 	public Parser(List<Token> tokens) {
 		this.tokens = tokens;
@@ -98,7 +99,7 @@ public class Parser {
 			if (match(TokenKind.KEYWORD) && top.text == "import") {
 				var node = importModule();
 				if (node instanceof RAstList list) {
-					nodes.addAll(list.decls);
+					list.decls.forEach(item -> nodes.add(item));
 				} else {
 					nodes.add(node);
 				}
@@ -242,7 +243,22 @@ public class Parser {
 					}
 					break;
 				}
-				sb.append(line).append(";\n");
+				sb.append(line);
+					
+				if (line.contains("if")
+					|| line.contains("else")
+					|| line.contains("while")
+					|| line.contains("do")
+					|| line.contains("function")
+					|| line.contains("try")
+					|| line.contains("catch")
+					|| line.contains("switch")
+					|| line.contains("{")
+					|| line.contains("}")) {
+				sb.append("\n");
+					continue;
+				}
+				sb.append(";\n");
 			}
 
 			body = new JSCode(start, end, sb.toString());
@@ -403,6 +419,7 @@ public class Parser {
 			}
 		}
 
+
 		if (nodes.isEmpty()) {
 			Errors.reportSyntaxError(id, "Importing an empty module is reduntant, hence not allowed");
 		}
@@ -418,11 +435,10 @@ public class Parser {
 		///*
 		var parser = new Parser(tokens);
 		var nodes = parser.parse();
-		//nodes.forEach(System.out::println);
 
-		var typechecker = new TypeChecker(nodes);
+		var typechecker = new TypeChecker(nodes, Parser.typeAliases);
 		typechecker.process();
-
+		typeAliases.addAll(typechecker.getAliases());
 		return nodes;
 	}
 
@@ -556,7 +572,7 @@ public class Parser {
 		var t0 = peek(0);
 		var t = _parseType();
 		List<Type> types = new ArrayList<>();
-		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE) && !match(TokenKind.KEYWORD) && !match(TokenKind.HASH) && !match(TokenKind.EOF)) {
+		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE) && !match(TokenKind.KEYWORD) && !match(TokenKind.HASH) && !match(TokenKind.EOF) && !(match(TokenKind.RBRACKET))) {
 			var t1 = peek(0);
 			if (match(TokenKind.BITWISE_OPERATOR) && t1.text == "|") {
 				next();
@@ -619,7 +635,7 @@ public class Parser {
 		types.add(first);
 		while (!match(TokenKind.RPAREN) && !match(TokenKind.ASSIGN) && !match(TokenKind.COMMA) && !match(TokenKind.RBRACE)) {
 			var t1 = peek(0);
-			types.add(_parseType());
+			types.add(parseType());
 			if (match(TokenKind.BITWISE_OPERATOR) && t1.text.equals("|")) {
 				continue;
 			} else {
@@ -1068,13 +1084,13 @@ public class Parser {
 	}
 
 	private Ast multiplicative() {
-		Ast result = fieldAccess();
+		Ast result = unary();
 
 		while (true) {
 			var op = peek(0);
 			if (match(TokenKind.MULTPLICATIVE_OPERATOR)) {
 				next();
-				var rhs = fieldAccess();
+				var rhs = unary();
 				result = new BinOp(result, rhs, op);
 				continue;
 			}
@@ -1084,8 +1100,45 @@ public class Parser {
 		return result;
 	}
 
+
+	private Ast unary() {
+		var op = peek(0);
+		if (match(TokenKind.ADDITIVE_OPERATOR) && op.text.equals("-")) {
+			next();
+			var lhs = parseTerm();
+			var tok = new Token(TokenKind.NUMBER, "-1", op.span);
+			op.kind = TokenKind.MULTPLICATIVE_OPERATOR;
+			op.text = "*";
+			return new BinOp(lhs, new roy.ast.Number(tok), op);
+		}
+
+		return fieldAccess();
+	}
+
+	private boolean isCallValid() {
+		// First check all the standard token types that terminate arguments
+		if (match(TokenKind.EOF) || match(TokenKind.RPAREN) || match(TokenKind.COMMA)
+			|| match(TokenKind.BOOLEAN_OPERATOR) || match(TokenKind.RBRACE)
+			|| match(TokenKind.ADDITIVE_OPERATOR) || match(TokenKind.MULTPLICATIVE_OPERATOR) || match(TokenKind.COLON) || match(TokenKind.ARROW)
+			|| match(TokenKind.STR_CONCAT_OPERATOR) || match(TokenKind.PIPE) || match(TokenKind.SEMI_COLON)
+			|| match(TokenKind.DOT) || match(TokenKind.HASH) || match(TokenKind.DBL_COLON)) {
+			return false;
+		}
+
+		var keywords = List.of("then", "else", "in", "let", "type", "fn", "match", "where");
+		// Keywords that terminate argument lists
+		if (match(TokenKind.KEYWORD)) {
+			var text = peek(0).text;
+			if (keywords.contains(text)) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
 	private Ast fieldAccess() {
-		Ast result = unary();
+		Ast result = call();
 		while (true) {
 			if (match(TokenKind.DOT)) {
 				next();
@@ -1102,9 +1155,69 @@ public class Parser {
 		return result;
 	}
 
+	private Ast call() {
+		Token functionToken = peek(0);
+		Ast result = moduleAccess();
+
+		// Check if there are any expressions following this one that could be arguments
+		int functionLine = functionToken.span.line;
+
+		if (isCallValid()) {
+			List<Ast> args = new ArrayList<>();
+			
+			while (isCallValid()) {
+				Token argToken = peek(0);
+
+				if (argToken.span.line > functionLine) {
+					break;
+				}
+
+				if (match(TokenKind.LPAREN)) {
+					args.add(groupOrTuple());
+				} else if (match(TokenKind.LBRACE)) {
+					args.add(blockOrObject());
+				} else {
+					args.add(parseTerm());
+				}
+
+				if (!isCallValid() || peek(0).span.line > functionLine) {
+					break;
+				}
+			}
+
+			if (!args.isEmpty()) {
+				return new Call(result, args);
+			}
+		}
+
+		return result;
+	}
+
+	private Ast parseTerm() {
+		if (match(TokenKind.NUMBER) || match(TokenKind.STRING) || match(TokenKind.ID)) {
+			return parsePrimary();
+		}
+		
+		if (match(TokenKind.LPAREN)) {
+			return groupOrTuple();
+		}
+		
+		if (match(TokenKind.LBRACE)) {
+			return blockOrObject();
+		}
+		
+		var top = peek(0);
+		if (match(TokenKind.KEYWORD) && top.text.equals("if")) {
+			return ifStatement();
+		}
+		
+		Errors.reportSyntaxError(peek(0), "Expected an expression but found: " + peek(0).text);
+		return null;
+	}
+	
 	private Ast moduleAccess() {
 		var t0 = peek(0);
-		Ast result = fieldAccess();
+		Ast result = conditional();
 		while (true) {
 			if (match(TokenKind.DBL_COLON)) {
 				next();
@@ -1124,103 +1237,6 @@ public class Parser {
 		return result;
 	}
 
-	private Ast unary() {
-		var op = peek(0);
-		if (match(TokenKind.ADDITIVE_OPERATOR) && op.text.equals("-")) {
-			next();
-			var lhs = expression();
-			var tok = new Token(TokenKind.NUMBER, "-1", op.span);
-			op.kind = TokenKind.MULTPLICATIVE_OPERATOR;
-			op.text = "*";
-			return new BinOp(lhs, new roy.ast.Number(tok), op);
-		}
-
-		return moduleAccess();
-	}
-
-	private boolean isCallValid() {
-		// First check all the standard token types that terminate arguments
-		if (match(TokenKind.EOF) || match(TokenKind.RPAREN) || match(TokenKind.COMMA)
-			|| match(TokenKind.KEYWORD) || match(TokenKind.BOOLEAN_OPERATOR) || match(TokenKind.RBRACE)
-			|| match(TokenKind.ADDITIVE_OPERATOR) || match(TokenKind.MULTPLICATIVE_OPERATOR) || match(TokenKind.COLON) || match(TokenKind.ARROW)
-			|| match(TokenKind.STR_CONCAT_OPERATOR) || match(TokenKind.PIPE) || match(TokenKind.KEYWORD) || match(TokenKind.SEMI_COLON)
-			|| match(TokenKind.DOT) || match(TokenKind.HASH)) {
-			return false;
-		}
-
-		// Check if the current token is on a different line
-		return true;
-	}
-
-	private Ast call() {
-		Token functionToken = peek(0);
-		Ast result = conditional();
-
-		// Check if there are any expressions following this one that could be arguments
-		Token t = peek(0);
-
-		// Store the line number of the function token to check for line breaks
-		int functionLine = functionToken.span.line;
-
-		if (isCallValid()) {
-			List<Ast> args = new ArrayList<>();
-			while (isCallValid()) {
-				Token argToken = peek(0);
-
-				// Check if this token is on a different line from the function
-				if (argToken.span.line > functionLine) {
-					// Stop collecting arguments if we hit a new line
-					break;
-				}
-
-				// For space-separated arguments, parse a simpler expression
-				if (match(TokenKind.LPAREN)) {
-					args.add(groupOrTuple());
-				} else if (match(TokenKind.LBRACE)) {
-					args.add(blockOrObject());
-				} else {
-					args.add(parseTerm());
-				}
-
-				// Stop if we've reached a token that would terminate the argument list
-				t = peek(0);
-				if (!isCallValid() || t.span.line > functionLine) {
-					break;
-				}
-			}
-
-			// Create a function call node with the result as the function and args as parameters
-			if (!args.isEmpty()) {
-				return new Call(result, args);
-			}
-		}
-
-		return result;
-	}
-
-	private Ast parseTerm() {
-		// Parse a simple term (identifier, literal, etc.) without allowing it to include function calls
-
-		// Handle conditionals like 'if', but don't allow them to parse additional arguments
-		var top = peek(0);
-		if (match(TokenKind.KEYWORD) && top.text.equals("if")) {
-			return ifStatement();
-		}
-
-		// Handle basic terms
-		if (match(TokenKind.NUMBER) || match(TokenKind.STRING) || match(TokenKind.ID)) {
-			return parsePrimary();
-		}
-
-		// Allow grouped expressions but not function calls
-		if (match(TokenKind.LPAREN)) {
-			return groupOrTuple();
-		}
-
-		// Allow full expressions for other cases, which might be needed for complex arguments
-		return multiplicative();
-	}
-	
 	private Ast conditional() {
 		var top = peek(0);
 		if (match(TokenKind.KEYWORD) && top.text.equals("if")) {
@@ -1266,7 +1282,6 @@ public class Parser {
 	}
 
 	private Ast parsePrimary() {
-		// Number, "Hello", etc
 		var t = peek(0);
 		if (match(TokenKind.NUMBER)) {
 			next();
@@ -1319,8 +1334,6 @@ public class Parser {
 
 		Errors.reportSyntaxError(top, text);
 		System.exit(0);
-		//var err = new ErrorNode(top, text);
-		// errors.add(err);
 		return top;
 	}
 
