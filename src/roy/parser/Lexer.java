@@ -44,7 +44,6 @@ public class Lexer {
 		OPERATORS.put("++", new Token(TokenKind.STR_CONCAT_OPERATOR, "++"));
 
 		OPERATORS.put("=", new Token(TokenKind.ASSIGN, "="));
-		OPERATORS.put(":", new Token(TokenKind.ASSIGN, ":"));
 
 		OPERATORS.put("|>", new Token(TokenKind.PIPE, "|>"));
 		OPERATORS.put("(", new Token(TokenKind.LPAREN, "("));
@@ -56,6 +55,7 @@ public class Lexer {
 
 		OPERATORS.put("->", new Token(TokenKind.ARROW, "->"));
 		OPERATORS.put(":", new Token(TokenKind.COLON, ":"));
+		OPERATORS.put("::", new Token(TokenKind.DBL_COLON, "::"));
 		OPERATORS.put(",", new Token(TokenKind.COMMA, ","));
 		OPERATORS.put(";", new Token(TokenKind.SEMI_COLON, ";"));
 		OPERATORS.put(".", new Token(TokenKind.DOT, "."));
@@ -79,6 +79,7 @@ public class Lexer {
 		KEYWORDS.put("in", new Token(TokenKind.KEYWORD, "in"));
 		KEYWORDS.put("where", new Token(TokenKind.KEYWORD, "where"));
 		KEYWORDS.put("type", new Token(TokenKind.KEYWORD, "type"));
+		KEYWORDS.put("import", new Token(TokenKind.KEYWORD, "import"));
 	}
 
 	private List<ErrorNode> errors;
@@ -140,7 +141,7 @@ public class Lexer {
 			}
 		}
 
-		addToken(new Token(TokenKind.EOF, null));
+		addToken(new Token(TokenKind.EOF, "EOF"));
 
 		if (!errors.isEmpty()) {
 			errors.forEach(err -> { Errors.reportSyntaxError(err.token, err.message);});
@@ -177,14 +178,16 @@ public class Lexer {
 
 	private void addToken(Token token, int start) {
 		var span = new Span(line, start, filename);
-		token.span = span;
-		tokens.add(token);
+		var tok = new Token(token.kind, token.text);
+		tok.span = span;
+		tokens.add(tok);
 	}
 
 	private void addToken(Token token) {
 		var span = new Span(line, column, filename);
-		token.span = span;
-		tokens.add(token);
+		var tok = new Token(token.kind, token.text);
+		tok.span = span;
+		tokens.add(tok);
 	}
 
 	private void collectIdentifier(char top) {
