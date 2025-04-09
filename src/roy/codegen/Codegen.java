@@ -2,8 +2,10 @@ package roy.codegen;
 
 import java.lang.invoke.CallSite;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 import roy.ast.AnnotatedFunction;
 import roy.ast.Ast;
 import roy.ast.BinOp;
@@ -20,6 +22,7 @@ import roy.ast.RClosure;
 import roy.ast.RFunction;
 import roy.ast.RObject;
 import roy.ast.RString;
+import roy.ast.TypeAlias;
 import roy.ast.Unit;
 import roy.codegen.jsast.CodegenAst;
 import roy.codegen.jsast.JBinOp;
@@ -33,6 +36,7 @@ import roy.codegen.jsast.JLetExpression;
 import roy.codegen.jsast.JStatementList;
 import roy.codegen.jsast.JCall;
 import roy.codegen.jsast.JFieldAccess;
+import roy.codegen.jsast.JObjInstance;
 import roy.codegen.jsast.JObject;
 import roy.codegen.jsast.JStringCodeEmbed;
 import roy.codegen.jsast.NumberLiteral;
@@ -49,47 +53,93 @@ public class Codegen {
 		this.nodes = nodes;
 	}
 
-	public void gen() {
+	public String gen() {
+		List<CodegenAst> stmts = new ArrayList<>();
 		for (var node : nodes) {
 			if (node instanceof RFunction func) {
-				codegenFunction(func);
+				stmts.add(codegenFunction(func));
 			}
 
 			if (node instanceof AnnotatedFunction afunc) {
-				codegenAnnotatedFunction(afunc);
+				stmts.add(codegenAnnotatedFunction(afunc));
 			}
-
 		}
+
+		return Arrays.stream(stmts.toArray())
+			.map(Object::toString)
+			.collect(Collectors.joining("\n"));
 	}
 
-	private void codegenAnnotatedFunction(AnnotatedFunction afunc) {
+
+	public String repl() {
+		List<CodegenAst> stmts = new ArrayList<>();
+		for (var node : nodes) {
+			if (node instanceof RFunction func) {
+				stmts.add(codegenFunction(func));
+			} else
+
+			if (node instanceof AnnotatedFunction afunc) {
+				stmts.add(codegenAnnotatedFunction(afunc));
+			} else if(!(node instanceof TypeAlias)) {
+				stmts.add(codegenExpr(node));
+			}
+		}
+
+		return Arrays.stream(stmts.toArray())
+			.map(Object::toString)
+			.collect(Collectors.joining("\n"));
+	}
+
+	private CodegenAst codegenAnnotatedFunction(AnnotatedFunction afunc) {
 		var func = afunc.func;
 		var name = func.name.text;
 		var arg = func.args.isEmpty() ? null : func.args.getFirst();
 		var body = codegenExpr(func.body);
 
+		if (afunc.isExport) {
+			List<CodegenAst> wheres = new ArrayList<>();
+			for (var where : func.where) {
+				var fx = codegenFunction((RFunction) where);
+				wheres.add(fx);
+			}
+
+			if (!wheres.isEmpty()) {
+				wheres.add(body);
+				body = new JStatementList(wheres);
+			}
+		}
+
 		var arg_name = arg == null ? "" : arg.name.text;
 		var fx = new JFunction(name, arg_name, body);
 		fx.export = afunc.isExport;
-		if (name.equals("main")) {
-			System.out.println("" + fx + "\nmain();");
-		} else {
-			System.out.println("" + fx);
-		}
+		return fx;
 	}
 
-	private void codegenFunction(RFunction func) {
+	private CodegenAst codegenFunction(RFunction func) {
 		var name = func.name.text;
 		var arg = func.args.isEmpty() ? null : func.args.getFirst();
 		var body = codegenExpr(func.body);
 
+		List<CodegenAst> wheres = new ArrayList<>();
+		for (var where : func.where) {
+			var fx = codegenFunction((RFunction) where);
+			wheres.add(fx);
+		}
+
+		if (!wheres.isEmpty()) {
+			wheres.add(body);
+			body = new JStatementList(wheres);
+		}
+
 		var arg_name = arg == null ? "" : arg.name.text;
 		var fx = new JFunction(name, arg_name, body);
 		if (name.equals("main")) {
-			System.out.println("" + fx + "\nmain();");
-		} else {
-			System.out.println("" + fx);
-		}
+			List<CodegenAst> statements = new ArrayList<>();
+			statements.add(fx);
+			statements.add(new JCall(new JIdentifier(name), new ArrayList<>()));
+			return new JStatementList(statements);
+		} 
+		return fx;
 	}
 
 	private CodegenAst codegenExpr(Ast expr) {
@@ -185,6 +235,10 @@ public class Codegen {
 		for (var param : call.params) {
 			params.add(codegenExpr(param));
 		}
+
+		if (call.sum) {
+			return new JObjInstance(call.expr.toString(), params);
+		}
 		return new JCall(expr, params);
 	}
 
@@ -220,7 +274,9 @@ public class Codegen {
 	}
 
 	private CodegenAst codegenIdentifier(Identifier id) {
-
+		if (id.sum) {
+			return new JObjInstance(id.value.text);
+		}
 		return new JIdentifier(id.value.text);
 	}
 
