@@ -7,8 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import roy.ast.*;
+import roy.codegen.Codegen;
 import roy.codegen.jsast.JFunctionObject;
 import roy.errors.Errors;
+import roy.rt.It;
 import roy.tokens.Span;
 import roy.tokens.Token;
 import roy.tokens.TokenKind;
@@ -29,6 +31,7 @@ public class TypeChecker {
 	private Map<String, Type> functionTypes; // Store function types separately
 	private Map<String, TypeAlias> typeAliases; // Store type aliases or named types
 	private Map<String, JFunctionObject> sumTypes; // Holds sumtypes that are going to be codegened
+	private Map<String, RModule> modules; // Holds sumtypes that are going to be codegened
 
 	public TypeChecker(List<Ast> nodes) {
 		this.nodes = nodes;
@@ -40,11 +43,34 @@ public class TypeChecker {
 		this.localSymbolTable = new HashMap<>();
 		this.typeAliases = new HashMap<>();
 		this.sumTypes = new HashMap<>();
+		this.modules = new HashMap<>();
 
+		processAliases(nodes);
+		//System.out.println("" + typeAliases.toString());
 		// First pass: register all functions in the function table
 		registerFunctionsAndTypes();
 	}
 
+	public TypeChecker(List<Ast> nodes, List<Ast> aliases) {
+		this.nodes = nodes;
+		this.typeEnv = new HashMap<>();
+		this.substitutions = new HashMap<>();
+		this.functionTable = new HashMap<>();
+		this.checkedFunctions = new HashMap<>();
+		this.functionTypes = new HashMap<>();
+		this.localSymbolTable = new HashMap<>();
+		this.typeAliases = new HashMap<>();
+		this.sumTypes = new HashMap<>();
+		this.modules = new HashMap<>();
+
+		processAliases(aliases);
+		processAliases(nodes);
+		//System.out.println("" + typeAliases.toString());
+		// First pass: register all functions in the function table
+		registerFunctionsAndTypes();
+	}
+
+	
 	public TypeChecker() {
 		this.typeEnv = new HashMap<>();
 		this.substitutions = new HashMap<>();
@@ -54,6 +80,9 @@ public class TypeChecker {
 		this.localSymbolTable = new HashMap<>();
 		this.typeAliases = new HashMap<>();
 		this.sumTypes = new HashMap<>();
+		this.nodes = new ArrayList<>();
+		processAliases(nodes);
+		registerFunctionsAndTypes();
 	}
 
 	public void repl(List<Ast> nodes) {
@@ -66,23 +95,85 @@ public class TypeChecker {
 			list.add(value);
 		}
 
-
 		return Arrays.stream(list.toArray())
 			.map(Object::toString)
 			.collect(Collectors.joining("\n"));
 	}
 
+	public List<Ast> getAliases() {
+		List<Ast> list = new ArrayList<>();
+		for (var value : typeAliases.values()) {
+			list.add(value);
+		}
+
+		return list;
+	}
+
+
+	public String getModules() {
+		List<Ast> list = new ArrayList<>();
+		for (var value : modules.values()) {
+			list.addAll(value.decls);
+		}
+		var codegen = new Codegen(list);
+		return codegen.gen();
+	}
+
+	private void processAliases(List<Ast> _alias) {
+		for (Ast node : _alias) {
+			if (node instanceof TypeAlias alias) {
+				typeAliases.put(alias.name.text, alias);
+			}
+		}
+	}
+
 	// First pass: collect all function declarations
 	private void registerFunctionsAndTypes() {
 		for (Ast node : nodes) {
-			if (node instanceof TypeAlias alias) {
-				typeAliases.put(alias.name.text, alias);
-			} else if (node instanceof AnnotatedFunction func && func.isExtern) {
+			if (node instanceof AnnotatedFunction func && func.isExtern) {
 				addExternFunction(func);
 			} else if (node instanceof AnnotatedFunction func && func.isExport) {
 				addFunction(func.func);
 			} else if (node instanceof RFunction func) {
 				addFunction(func);
+			} else if (node instanceof RModule mod) {
+				mod.decls.forEach(_node -> {
+					if (_node instanceof TypeAlias) {
+						return;
+					}
+
+					if (_node instanceof AnnotatedFunction func && func.isExtern) {
+						return;
+					}
+
+					if (_node instanceof AnnotatedFunction func && func.isExport) {
+						checkArgs(func.func);
+						inferFunction(func.func);
+						checkedFunctions.remove(func.func.name.text);
+						functionTable.remove(func.func.name.text);
+						return;
+					}
+					if (_node instanceof RFunction func) {
+						checkArgs(func);
+						inferFunction(func);
+						checkedFunctions.remove(func.name.text);
+						functionTable.remove(func.name.text);
+						return;
+					}
+
+				});
+				modules.put(mod.name.text, mod);
+			}
+		}
+	}
+
+	private void checkArgs(RFunction func) {
+		for (var arg : func.args) {
+			if (arg.type instanceof NamedType nm) {
+				if (!typeAliases.containsKey(nm.name.text)) {
+					System.out.println("" + typeAliases.keySet());
+					Errors.reportTypeCheckError(arg.name, "Type `" + nm.name.text + "` is unknown in this context.");
+				}
 			}
 		}
 	}
@@ -91,7 +182,7 @@ public class TypeChecker {
 		String name = func.func.name.text;
 		functionTable.put(name, func.func);
 		checkedFunctions.put(name, true);
-		
+
 		// Create a proper function type for extern functions
 		List<Type> argTypes = new ArrayList<>();
 		for (Arg arg : func.func.args) {
@@ -102,16 +193,16 @@ public class TypeChecker {
 				argTypes.add(freshTypeVar(arg.name));
 			}
 		}
-		
+
 		// Handle the special case for no arguments - never allow an extern function to have zero arguments
 		if (argTypes.isEmpty() && func.func.body instanceof JSCode) {
 			// If there are no arguments but it's clearly meant to take arguments, add a generic type
 			argTypes.add(new TypeVariable(new Token(TokenKind.ID, "a", func.func.name.span)));
 		}
-		
+
 		// Use the return type specified in the function
 		Type returnType = func.func.type != null ? func.func.type : freshTypeVar(func.func.name);
-		
+
 		// Create and store the function type
 		functionTypes.put(name, new FunctionType(argTypes, returnType));
 	}
@@ -184,6 +275,7 @@ public class TypeChecker {
 
 		return infer(nodes.getFirst()).type;
 	}
+
 	// Create a fresh type variable using a token
 	private TypeVariable freshTypeVar(Token token) {
 		return new TypeVariable(token);
@@ -227,6 +319,8 @@ public class TypeChecker {
 			return inferFieldAccess((FieldAccess) node);
 		} else if (node instanceof GroupExpression expr) {
 			return inferGroupExpression(expr);
+		} else if (node instanceof ModuleAccess ma) {
+			return inferModuleAccess(ma);
 		} else {
 			// For other node types, report an error
 			Token token = getTokenFromAst(node);
@@ -234,6 +328,68 @@ public class TypeChecker {
 			System.exit(0);
 			return null;
 		}
+	}
+
+	private CheckedNode inferModuleAccess(ModuleAccess ma) {
+		var lhs = ma.module.toString();
+		if (!modules.containsKey(lhs)) {
+			Token token = getTokenFromAst(ma.field);
+			Errors.reportTypeCheckError(token, "Module `" + lhs + "` is not found. Try adding an import statement");
+		}
+
+		var mod = modules.get(lhs);
+		var func = extractNode(lhs, mod.decls, ma.field.value);
+		if (func instanceof AnnotatedFunction fx && fx.isExport) {
+			return inferFunction(fx.func);
+		}
+		if (func instanceof AnnotatedFunction fx && fx.isExtern) {
+			return new CheckedNode(makeExternFunctionType(fx), func);
+		}
+		return inferFunction((RFunction) func);
+	}
+
+	private Type makeExternFunctionType(AnnotatedFunction func) {
+		String name = func.func.name.text;
+		functionTable.put(name, func.func);
+		checkedFunctions.put(name, true);
+
+		// Create a proper function type for extern functions
+		List<Type> argTypes = new ArrayList<>();
+		for (Arg arg : func.func.args) {
+			if (arg.type != null) {
+				argTypes.add(arg.type);
+			} else {
+				// Extern functions must have explicit types
+				argTypes.add(freshTypeVar(arg.name));
+			}
+		}
+
+		// Handle the special case for no arguments - never allow an extern function to have zero arguments
+		if (argTypes.isEmpty() && func.func.body instanceof JSCode) {
+			// If there are no arguments but it's clearly meant to take arguments, add a generic type
+			argTypes.add(new TypeVariable(new Token(TokenKind.ID, "a", func.func.name.span)));
+		}
+
+		// Use the return type specified in the function
+		Type returnType = func.func.type != null ? func.func.type : freshTypeVar(func.func.name);
+
+		// Create and store the function type
+		return new FunctionType(argTypes, returnType);
+	}
+
+	private Ast extractNode(String module, List<Ast> nodes, Token name) {
+		for (var ast : nodes) {
+			if (ast instanceof RFunction func && func.name.text.equals(name.text)) {
+				return func;
+			}
+			if (ast instanceof AnnotatedFunction afunc && afunc.func.name.text.equals(name.text)) {
+				return afunc;
+			}
+		}
+
+		Errors.reportSyntaxError(name, "No function `" + name.text + "` found in module " + module);
+		It.unreachable();
+		return null;
 	}
 
 	private CheckedNode inferGroupExpression(GroupExpression expr) {
@@ -370,6 +526,8 @@ public class TypeChecker {
 			return getTokenFromAst(fa.field);
 		} else if (ast instanceof GroupExpression expr) {
 			return getTokenFromAst(expr.expr);
+		} else if (ast instanceof ModuleAccess ma) {
+			return getTokenFromAst(ma.module);
 		}
 
 		// Fallback in case we can't extract a token
@@ -1025,11 +1183,11 @@ public class TypeChecker {
 			// Simple case: Single argument constructor (e.g., Some a)
 			return new CheckedNode(new AppType(id.value, argTypes), call);
 		}
-		
+
 		// Regular function call processing
 		CheckedNode funcChecked = infer(call.expr);
 		Type funcType = funcChecked.type;
-		
+
 		// Check that the function type is a function
 		if (!(funcType instanceof FunctionType)) {
 			// Handle functions that return closures (auto-currying)
@@ -1055,7 +1213,7 @@ public class TypeChecker {
 				return new CheckedNode(unit, call);
 			}
 		}
-		
+
 		// Process each argument
 		for (int i = 0; i < call.params.size(); i++) {
 			// We need to ensure we have a function type for each argument
