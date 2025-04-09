@@ -24,6 +24,7 @@ public enum TokenKind {
 	RBRACKET, // ]
 	ARROW, // ->
 	COLON, //:
+	DBL_COLON, // ::
 	COMMA, //,
 	SEMI_COLON, // ;
 	DOT, // .
