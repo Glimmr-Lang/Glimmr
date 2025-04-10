@@ -244,7 +244,7 @@ public class Parser {
 					break;
 				}
 				sb.append(line);
-					
+
 				if (line.contains("if")
 					|| line.contains("else")
 					|| line.contains("while")
@@ -255,7 +255,7 @@ public class Parser {
 					|| line.contains("switch")
 					|| line.contains("{")
 					|| line.contains("}")) {
-				sb.append("\n");
+					sb.append("\n");
 					continue;
 				}
 				sb.append(";\n");
@@ -419,7 +419,6 @@ public class Parser {
 			}
 		}
 
-
 		if (nodes.isEmpty()) {
 			Errors.reportSyntaxError(id, "Importing an empty module is reduntant, hence not allowed");
 		}
@@ -470,11 +469,11 @@ public class Parser {
 			ret_type = parseType();
 		}
 
-		expect(TokenKind.ASSIGN, "Expected a `=` after the return type " + peek(0));
+		var eq = expect(TokenKind.ASSIGN, "Expected a `=` after the return type " + peek(0));
 		var t = peek(0);
 
 		if (t.kind == TokenKind.EOF) {
-			expect(TokenKind.ERR, "Expected function to have a body when defining function `" + name.text + "`");
+			Errors.reportSyntaxError(eq, "Expected function to have a body when defining function `" + name.text + "`");
 		}
 		var body = expression();
 
@@ -1060,27 +1059,115 @@ public class Parser {
 				result = new BinOp(result, multiplicative(), op);
 				continue;
 			} else if (match(TokenKind.PIPE)) {
-				next();
-				var t = peek(0);
-				var next = multiplicative();
-				if (!(next instanceof Call) && !(next instanceof Identifier)) {
-					Errors.reportSyntaxError(t, "Pipe operator can only be used with functions and symbols");
-				}
-				List<Ast> nodes = new ArrayList<>();
-				// 5 |> hello
-				if (next instanceof Identifier id) {
-					nodes.add(id);
-					result = new Call(result, nodes);
-				} else if (next instanceof Call call) {
-					// 5 |> add 10
-					call.params.addFirst(result);
-					result = call;
-				}
+				result = processPipe(result);
+				continue;
 			}
 			break;
 		}
 
 		return result;
+	}
+
+	private Ast processPipe(Ast lhs) {
+		next(); // Consume |>
+
+		// For multi-line pipes, we need to handle newlines
+		var rhs = callOrTerm();
+
+		if (rhs instanceof Identifier id) {
+			// Case 1: RHS is an identifier like "sbString"
+			List<Ast> args = new ArrayList<>();
+			args.add(lhs);
+			return new Call(id, args);
+		} else if (rhs instanceof ModuleAccess ma) {
+			// Case 2: RHS is a module access like "io::println"
+			List<Ast> args = new ArrayList<>();
+			args.add(lhs);
+			return new Call(ma, args);
+		} else if (rhs instanceof Call call) {
+			// Case 3: RHS is a function call like "append "Hello""
+			call.params.addFirst(lhs);
+			return call;
+		} else if (rhs instanceof RClosure closure) {
+			// Case 4: RHS is a closure like {x -> ...}
+			// Create a call with the closure as the function and lhs as the argument
+			List<Ast> args = new ArrayList<>();
+			args.add(lhs);
+			return new Call(closure, args);
+		} else {
+			// Error case - report it
+			Errors.reportSyntaxError(peek(0), "Pipe operator requires identifier, function call, or closure on right side");
+			return lhs;
+		}
+	}
+
+	private Ast callOrTerm() {
+		// Parse a function call or a simple term
+		// This is used by the pipe operator to get the right-hand side
+		Token functionToken = peek(0);
+
+		if (match(TokenKind.ID)) {
+			next(); // Consume the identifier
+
+			// Check for module access (::)
+			if (match(TokenKind.DBL_COLON)) {
+				next(); // Consume ::
+				
+				// Expect an identifier after ::
+				var moduleTarget = expect(TokenKind.ID, "Expected identifier after '::'");
+				var moduleExpr = new ModuleAccess(new Identifier(functionToken), new Identifier(moduleTarget));
+				
+				// Check if module access is followed by arguments for a function call
+				if (isCallValid()) {
+					List<Ast> args = new ArrayList<>();
+					while (isCallValid() && peek(0).span.line == moduleTarget.span.line) {
+						if (match(TokenKind.LPAREN)) {
+							args.add(groupOrTuple());
+						} else if (match(TokenKind.LBRACE)) {
+							args.add(blockOrObject());
+						} else {
+							args.add(parseTerm());
+						}
+					}
+					
+					if (!args.isEmpty()) {
+						return new Call(moduleExpr, args);
+					}
+				}
+				
+				// Just a module access with no args
+				return moduleExpr;
+			}
+			
+			// Check if there are arguments following the identifier
+			if (isCallValid()) {
+				List<Ast> args = new ArrayList<>();
+				while (isCallValid() && peek(0).span.line == functionToken.span.line) {
+					if (match(TokenKind.LPAREN)) {
+						args.add(groupOrTuple());
+					} else if (match(TokenKind.LBRACE)) {
+						args.add(blockOrObject());
+					} else {
+						args.add(parseTerm());
+					}
+				}
+				
+				if (!args.isEmpty()) {
+					return new Call(new Identifier(functionToken), args);
+				}
+			}
+			
+			// Just an identifier with no args
+			return new Identifier(functionToken);
+		}
+		
+		// Check for block/closure
+		if (match(TokenKind.LBRACE)) {
+			return blockOrObject();
+		}
+		
+		// Not an identifier or closure, just return a term
+		return parseTerm();
 	}
 
 	private Ast multiplicative() {
@@ -1099,7 +1186,6 @@ public class Parser {
 
 		return result;
 	}
-
 
 	private Ast unary() {
 		var op = peek(0);
@@ -1125,7 +1211,7 @@ public class Parser {
 			return false;
 		}
 
-		var keywords = List.of("then", "else", "in", "let", "type", "fn", "match", "where");
+		var keywords = List.of("then", "else", "in", "let", "type", "fn", "match", "where", "try");
 		// Keywords that terminate argument lists
 		if (match(TokenKind.KEYWORD)) {
 			var text = peek(0).text;
@@ -1164,7 +1250,7 @@ public class Parser {
 
 		if (isCallValid()) {
 			List<Ast> args = new ArrayList<>();
-			
+
 			while (isCallValid()) {
 				Token argToken = peek(0);
 
@@ -1197,24 +1283,24 @@ public class Parser {
 		if (match(TokenKind.NUMBER) || match(TokenKind.STRING) || match(TokenKind.ID)) {
 			return parsePrimary();
 		}
-		
+
 		if (match(TokenKind.LPAREN)) {
 			return groupOrTuple();
 		}
-		
+
 		if (match(TokenKind.LBRACE)) {
 			return blockOrObject();
 		}
-		
+
 		var top = peek(0);
 		if (match(TokenKind.KEYWORD) && top.text.equals("if")) {
 			return ifStatement();
 		}
-		
+
 		Errors.reportSyntaxError(peek(0), "Expected an expression but found: " + peek(0).text);
 		return null;
 	}
-	
+
 	private Ast moduleAccess() {
 		var t0 = peek(0);
 		Ast result = conditional();
@@ -1227,7 +1313,6 @@ public class Parser {
 				var t = peek(0);
 				if (match(TokenKind.ID)) {
 					next();
-
 					result = new ModuleAccess(result, new Identifier(t));
 					continue;
 				}
@@ -1338,3 +1423,4 @@ public class Parser {
 	}
 
 }
+
