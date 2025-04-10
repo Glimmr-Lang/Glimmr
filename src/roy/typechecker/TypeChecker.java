@@ -965,6 +965,7 @@ public class TypeChecker {
 			try {
 				unify(func.type, returnType, func.body);
 			} catch (TypeMismatchError e) {
+				System.out.println("" + e.getMessage());
 				Errors.reportTypeCheckError(getTokenFromAst(func.body), e.getMessage());
 			}
 		}
@@ -1188,6 +1189,10 @@ public class TypeChecker {
 		CheckedNode funcChecked = infer(call.expr);
 		Type funcType = funcChecked.type;
 
+		if (funcType instanceof NamedType nm && typeAliases.containsKey(nm.name.text)) {
+			funcType = typeAliases.get(nm.name.text).type.clone();
+		}
+
 		// Check that the function type is a function
 		if (!(funcType instanceof FunctionType)) {
 			// Handle functions that return closures (auto-currying)
@@ -1209,7 +1214,7 @@ public class TypeChecker {
 			CheckedNode argChecked = infer(argAst);
 			if (argChecked.type instanceof UnitType unit) {
 				call.auto = true;
-				call.params.removeLast();
+				//call.params.removeLast();
 				return new CheckedNode(unit, call);
 			}
 		}
