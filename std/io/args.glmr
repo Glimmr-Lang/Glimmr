@@ -1,0 +1,6 @@
+
+type Args = [String]
+
+#[extern]
+fn getArgs : Args = 
+	return __args__;

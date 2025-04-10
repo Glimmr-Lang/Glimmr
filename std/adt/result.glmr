@@ -1,0 +1,7 @@
+
+type Result = Ok a | Err e
+
+fn ok a = Ok a
+
+fn err e = Err e
+

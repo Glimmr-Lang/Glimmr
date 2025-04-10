@@ -1,0 +1,24 @@
+
+import std::adt {ok, err, Result}
+
+#[extern]
+fn readToString (path: String) : String = 
+	var sc = new Packages.java.util.Scanner(new Packages.java.io.File(path))
+	var sb = new Packages.java.lang.StringBuilder()
+	while (sc.hasNextLine()) {
+		sb.append(sc.nextLine()).append("\n")
+	}
+	return sb.toString();
+
+#[extern]
+fn readFile (path: String) : Result= 
+	try {
+			var sc = new Scanner(new File(path))
+      var sb = new StringBuilder()
+			while (sc.hasNextLine()) {
+				sb.append(sc.nextLine()).append("\n")
+			}
+			return Result.ok(sb.toString())
+	} catch (e) {
+		return Result.err(e)
+	} ;

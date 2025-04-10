@@ -1,0 +1,14 @@
+
+type StringBuilder = {}
+
+#[extern]
+fn stringBuilder () : StringBuilder = 
+	return new Packages.java.lang.StringBuilder();
+
+#[extern]
+fn append (sb: StringBuilder) (value: a) : StringBuilder = 
+	return sb.append(value);
+
+#[extern]
+fn sbString (sb: StringBuilder) : String = 
+	return sb.toString();

@@ -1,0 +1,5 @@
+
+type Option = Some a | None
+
+fn some a = Some a 
+fn none = None

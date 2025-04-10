@@ -1,0 +1,78 @@
+#[extern]
+fn osName : String = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.getProperty("os.name") 
+		: navigator.platform || "Unknown";
+
+#[extern]
+fn osVersion : String = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.getProperty("os.version") 
+		: navigator.userAgent || "Unknown";
+
+#[extern]
+fn javaVersion : String = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.getProperty("java.version") 
+		: "Not running in Java environment";
+
+#[extern]
+fn javaVendor : String = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.getProperty("java.vendor") 
+		: "Not running in Java environment";
+
+#[extern]
+fn userHome : String = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.getProperty("user.home") 
+		: "Unknown";
+
+#[extern]
+fn userDir : String = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.getProperty("user.dir") 
+		: "Unknown";
+
+#[extern]
+fn userName : String = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.getProperty("user.name") 
+		: "Unknown";
+
+#[extern]
+fn env (name: String) : String = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.getenv(name) 
+		: process?.env?.[name] || "";
+
+#[extern]
+fn property (name: String) : String = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.getProperty(name) 
+		: "";
+
+#[extern]
+fn exit (code: Number) : Unit = 
+	if (typeof Packages !== 'undefined') {
+		Packages.java.lang.System.exit(code);
+	} else if (typeof process !== 'undefined') {
+		process.exit(code);
+	}
+
+#[extern]
+fn currentTimeMillis : Number = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.currentTimeMillis() 
+		: Date.now();
+
+#[extern]
+fn nanoTime : Number = 
+	return typeof Packages !== 'undefined' 
+		? Packages.java.lang.System.nanoTime() 
+		: performance?.now() * 1000000 || Date.now() * 1000000;
+
+#[extern]
+fn gc : Unit = 
+	Packages.java.lang.System.gc()
+	return;
