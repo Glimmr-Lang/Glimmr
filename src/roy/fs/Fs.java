@@ -4,6 +4,8 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Scanner;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import roy.adt.Result;
 
 /**
@@ -30,13 +32,18 @@ public class Fs {
       return Result.err(new Exception("File reference is null"));
     }
 
-    if (!fp.exists()) {
-      return Result.err(new Exception(String.format("File `%s` does not exist", fp.getName())));
-    }
-
     if (fp.isDirectory()) {
       return Result.err(new Exception(String.format("File `%s` is a directory", fp.getName())));
     }
+
+    if (!fp.exists()) {
+			try {
+				fp.createNewFile();
+			} catch (IOException ex) {
+				return Result.err(ex);
+			}
+    }
+
 
     try (FileWriter fw = new FileWriter(fp)) {
       fw.write(data);
