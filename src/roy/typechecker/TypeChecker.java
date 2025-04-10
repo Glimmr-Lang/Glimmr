@@ -403,7 +403,7 @@ public class TypeChecker {
 
 		if (!(expr_type instanceof ObjectType) && !(expr_type instanceof TypeVariable)) {
 			Token token = getTokenFromAst(fieldAccess.obj);
-			Errors.reportTypeCheckError(token, "Field access is not valid for an expression of type " + expr_type + ". Field access only works for object types");
+			Errors.reportTypeCheckError(token, "Field access is not valid for an expression of type " + expr_type + ". Field access only works for object types, but found type: " + expr_type);
 			System.exit(0);
 			return null;
 		}
