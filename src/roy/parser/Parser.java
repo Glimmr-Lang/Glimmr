@@ -289,7 +289,11 @@ public class Parser {
 		}
 
 		if (args.isEmpty()) {
+<<<<<<< HEAD
 			return new RFunction(name, args, ret_type, body, where);
+=======
+				return new RFunction(name, args, ret_type, body, where);
+>>>>>>> 4c6949c (Parser: working state)
 		} else if (args.size() == 1) {
 			return new RFunction(name, args, ret_type, body, where);
 		}
@@ -1247,6 +1251,7 @@ public class Parser {
 		Token functionToken = peek(0);
 		Ast result = moduleAccess();
 
+<<<<<<< HEAD
 		// Handle function calls with parentheses
 		if (match(TokenKind.LPAREN)) {
 			next(); // Consume the opening parenthesis
@@ -1267,6 +1272,22 @@ public class Parser {
 			
 			// Create a function call with the parsed arguments
 			return new Call(result, args);
+=======
+		// Check if there are any expressions following this one that could be arguments
+		int functionLine = functionToken.span.line;
+
+		if (match(TokenKind.LPAREN)) {
+			next();
+			List<Ast> args = new ArrayList<>();
+			while(!match(TokenKind.RPAREN)) {
+				args.add(expression());
+				if (!match(TokenKind.RPAREN)) {
+					expect(TokenKind.COMMA, "Expected `,` after argument");
+				}
+			}
+			result = new Call(result, args);
+			next();
+>>>>>>> 4c6949c (Parser: working state)
 		}
 
 		return result;
