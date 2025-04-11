@@ -289,14 +289,7 @@ public class Parser {
 		}
 
 		if (args.isEmpty()) {
-			if (is_extern) {
-				var dummyToken = new Token(TokenKind.ID, "_dummy", name.span);
-				var dummyArg = new Arg(dummyToken, new TypeVariable(dummyToken.span));
-				args.add(dummyArg);
-				return new RFunction(name, args, ret_type, body, where);
-			} else {
-				return new RFunction(name, args, ret_type, body, where);
-			}
+			return new RFunction(name, args, ret_type, body, where);
 		} else if (args.size() == 1) {
 			return new RFunction(name, args, ret_type, body, where);
 		}
@@ -1117,44 +1110,52 @@ public class Parser {
 				var moduleTarget = expect(TokenKind.ID, "Expected identifier after '::'");
 				var moduleExpr = new ModuleAccess(new Identifier(functionToken), new Identifier(moduleTarget));
 				
-				// Check if module access is followed by arguments for a function call
-				if (isCallValid()) {
+				// Check if module access is followed by parentheses for a function call
+				if (match(TokenKind.LPAREN)) {
+					next(); // Consume the opening parenthesis
 					List<Ast> args = new ArrayList<>();
-					while (isCallValid() && peek(0).span.line == moduleTarget.span.line) {
-						if (match(TokenKind.LPAREN)) {
-							args.add(groupOrTuple());
-						} else if (match(TokenKind.LBRACE)) {
-							args.add(blockOrObject());
-						} else {
-							args.add(parseTerm());
+					
+					// Parse comma-separated arguments inside parentheses
+					if (!match(TokenKind.RPAREN)) {
+						args.add(expression());
+						
+						while (match(TokenKind.COMMA)) {
+							next(); // Consume the comma
+							args.add(expression());
 						}
 					}
 					
-					if (!args.isEmpty()) {
-						return new Call(moduleExpr, args);
-					}
+					// Expect closing parenthesis
+					expect(TokenKind.RPAREN, "Expected ')' after function arguments");
+					
+					// Create a function call with the parsed arguments
+					return new Call(moduleExpr, args);
 				}
 				
 				// Just a module access with no args
 				return moduleExpr;
 			}
 			
-			// Check if there are arguments following the identifier
-			if (isCallValid()) {
+			// Check if identifier is followed by parentheses for a function call
+			if (match(TokenKind.LPAREN)) {
+				next(); // Consume the opening parenthesis
 				List<Ast> args = new ArrayList<>();
-				while (isCallValid() && peek(0).span.line == functionToken.span.line) {
-					if (match(TokenKind.LPAREN)) {
-						args.add(groupOrTuple());
-					} else if (match(TokenKind.LBRACE)) {
-						args.add(blockOrObject());
-					} else {
-						args.add(parseTerm());
+				
+				// Parse comma-separated arguments inside parentheses
+				if (!match(TokenKind.RPAREN)) {
+					args.add(expression());
+					
+					while (match(TokenKind.COMMA)) {
+						next(); // Consume the comma
+						args.add(expression());
 					}
 				}
 				
-				if (!args.isEmpty()) {
-					return new Call(new Identifier(functionToken), args);
-				}
+				// Expect closing parenthesis
+				expect(TokenKind.RPAREN, "Expected ')' after function arguments");
+				
+				// Create a function call with the parsed arguments
+				return new Call(new Identifier(functionToken), args);
 			}
 			
 			// Just an identifier with no args
@@ -1245,35 +1246,26 @@ public class Parser {
 		Token functionToken = peek(0);
 		Ast result = moduleAccess();
 
-		// Check if there are any expressions following this one that could be arguments
-		int functionLine = functionToken.span.line;
-
-		if (isCallValid()) {
+		// Handle function calls with parentheses
+		if (match(TokenKind.LPAREN)) {
+			next(); // Consume the opening parenthesis
 			List<Ast> args = new ArrayList<>();
-
-			while (isCallValid()) {
-				Token argToken = peek(0);
-
-				if (argToken.span.line > functionLine) {
-					break;
-				}
-
-				if (match(TokenKind.LPAREN)) {
-					args.add(groupOrTuple());
-				} else if (match(TokenKind.LBRACE)) {
-					args.add(blockOrObject());
-				} else {
-					args.add(parseTerm());
-				}
-
-				if (!isCallValid() || peek(0).span.line > functionLine) {
-					break;
+			
+			// Parse comma-separated arguments inside parentheses
+			if (!match(TokenKind.RPAREN)) {
+				args.add(expression());
+				
+				while (match(TokenKind.COMMA)) {
+					next(); // Consume the comma
+					args.add(expression());
 				}
 			}
-
-			if (!args.isEmpty()) {
-				return new Call(result, args);
-			}
+			
+			// Expect closing parenthesis
+			expect(TokenKind.RPAREN, "Expected ')' after function arguments");
+			
+			// Create a function call with the parsed arguments
+			return new Call(result, args);
 		}
 
 		return result;
@@ -1314,6 +1306,29 @@ public class Parser {
 				if (match(TokenKind.ID)) {
 					next();
 					result = new ModuleAccess(result, new Identifier(t));
+					
+					// After creating a ModuleAccess, check if it's followed by function call parentheses
+					if (match(TokenKind.LPAREN)) {
+						next(); // Consume the opening parenthesis
+						List<Ast> args = new ArrayList<>();
+						
+						// Parse comma-separated arguments inside parentheses
+						if (!match(TokenKind.RPAREN)) {
+							args.add(expression());
+							
+							while (match(TokenKind.COMMA)) {
+								next(); // Consume the comma
+								args.add(expression());
+							}
+						}
+						
+						// Expect closing parenthesis
+						expect(TokenKind.RPAREN, "Expected ')' after function arguments");
+						
+						// Create a function call with the parsed arguments
+						result = new Call(result, args);
+					}
+					
 					continue;
 				}
 			}
