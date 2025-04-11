@@ -870,20 +870,21 @@ public class Parser {
 
 		var t = peek(0);
 		var next = peek(1);
+		var next2 = peek(2);
+
+		// {| it -> 
+		if (match(TokenKind.ID) && (next.kind == TokenKind.ARROW)) {
+			return blockClosure();
+		}
+
+		// {| it: ( -> 
+		if (match(TokenKind.ID) && (next.kind == TokenKind.COLON) && next.kind == TokenKind.LPAREN) {
+			return blockClosure();
+		}
+
+
 		if (match(TokenKind.ID) && next.kind == TokenKind.COLON) {
 			return object();
-		}
-
-		if (match(TokenKind.ID) && (next.kind == TokenKind.ARROW || next.kind == TokenKind.ID || next.kind == TokenKind.LPAREN)) {
-			return blockClosure();
-		}
-
-		if (match(TokenKind.LPAREN) && (next.kind == TokenKind.ID)) {
-			return blockClosure();
-		}
-
-		if (match(TokenKind.ID) && t.text.equals("_") && next.kind == TokenKind.ARROW) {
-			return blockClosure();
 		}
 
 		List<Ast> exprs = new ArrayList<>();
