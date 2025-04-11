@@ -24,7 +24,7 @@ public class Roy {
 	 */
 	public static void main(String[] args) {
 		System.setProperty("-Dnashorn.args", "--language=es6");
-		Lexer lexer = new Lexer("./examples/hello.roy");
+		Lexer lexer = new Lexer("./examples/hello.glmr");
 		var tokens = lexer.lex();
 		//tokens.forEach(System.out::println);
 		///*
@@ -43,8 +43,8 @@ public class Roy {
 		result += "\n" + typechecker.getSumTypes().trim();
 		result += "\n" + codegen.gen().trim();
 
-		Fs.writeToFile(new File("./out.js"), result);
-		// System.out.println("" + result);
+		// Fs.writeToFile(new File("./out.js"), result);
+		System.out.println("" + result);
 		//runCode(result, args);
 		//*/
 	}
