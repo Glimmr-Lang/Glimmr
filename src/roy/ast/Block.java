@@ -21,7 +21,7 @@ public class Block implements Ast {
 
 		if (exprs.isEmpty()) return "{}";
 
-		var last = exprs.removeLast();
+		var last = exprs.getLast();
 		for (var expr: exprs) {
 			sb.append(expr.toString().indent(4));
 		}

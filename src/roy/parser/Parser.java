@@ -1266,7 +1266,6 @@ public class Parser {
 			expect(TokenKind.RPAREN, "Expected ')' after function arguments");
 			
 			result = new Call(result, args);
-			next();
 		}
 
 		return result;
@@ -1402,7 +1401,7 @@ public class Parser {
 			return new Identifier(t);
 		}
 
-		It.unreachable("parsePrimary: " + t.text);
+		It.unreachable("parsePrimary: " + t.text + " " + t.span.line);
 		return null;
 	}
 

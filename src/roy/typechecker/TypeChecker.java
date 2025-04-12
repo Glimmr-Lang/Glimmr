@@ -194,11 +194,6 @@ public class TypeChecker {
 			}
 		}
 
-		// Handle the special case for no arguments - never allow an extern function to have zero arguments
-		if (argTypes.isEmpty() && func.func.body instanceof JSCode) {
-			// If there are no arguments but it's clearly meant to take arguments, add a generic type
-			argTypes.add(new TypeVariable(new Token(TokenKind.ID, "a", func.func.name.span)));
-		}
 
 		// Use the return type specified in the function
 		Type returnType = func.func.type != null ? func.func.type : freshTypeVar(func.func.name);
@@ -264,7 +259,7 @@ public class TypeChecker {
 			var type = kv.getValue(); 
 			System.out.println("fn " + name + " : " + type);
 		}
-		 */
+		*/
 		// Print results
 	}
 
@@ -1228,13 +1223,6 @@ public class TypeChecker {
 		
 		// Handle function call with Unit argument to a no-argument function
 		if (call.params.size() == 1 && ft.args.size() == 0) {
-			Ast argAst = call.params.get(0);
-			CheckedNode argChecked = infer(argAst);
-			if (argChecked.type instanceof UnitType unit) {
-				call.auto = true;
-				call.params.removeLast();
-				return new CheckedNode(ft.type, call);
-			}
 		}
 
 		// Process each argument

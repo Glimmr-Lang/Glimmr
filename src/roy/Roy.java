@@ -30,7 +30,7 @@ public class Roy {
 		///*
 		var parser = new Parser(tokens);
 		var nodes = parser.parse();
-		//nodes.forEach(System.out::println);
+		// nodes.forEach(System.out::println);
 
 		var typechecker = new TypeChecker(nodes, Parser.typeAliases);
 		typechecker.process();
@@ -44,8 +44,8 @@ public class Roy {
 		result += "\n" + codegen.gen().trim();
 
 		// Fs.writeToFile(new File("./out.js"), result);
-		System.out.println("" + result);
-		//runCode(result, args);
+		//System.out.println("" + result);
+		runCode(result, args);
 		//*/
 	}
 
