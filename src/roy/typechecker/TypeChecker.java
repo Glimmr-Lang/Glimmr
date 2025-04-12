@@ -793,10 +793,27 @@ public class TypeChecker {
 
 		var names = new ArrayList<String>();
 		if (!func.where.isEmpty()) {
+			// First, register all where functions in the function table to allow recursive calls
 			for (var f : func.where) {
 				var fx = (RFunction) f;
 				names.add(fx.name.text);
 				functionTable.put(fx.name.text, fx);
+				
+				// Register a skeleton function type for each where function
+				String whereFuncName = fx.name.text;
+				List<Type> whereArgTypes = new ArrayList<>();
+				for (Arg arg : fx.args) {
+					Type whereArgType = arg.type != null ? arg.type : freshTypeVar(arg.name);
+					whereArgTypes.add(whereArgType);
+				}
+				Type whereReturnType = fx.type != null ? fx.type : freshTypeVar(fx.name);
+				functionTypes.put(whereFuncName, new FunctionType(whereArgTypes, whereReturnType));
+				checkedFunctions.put(whereFuncName, false);
+			}
+			
+			// Then, infer types for each where function
+			for (var f : func.where) {
+				var fx = (RFunction) f;
 				inferFunction(fx);
 			}
 		}
@@ -1204,13 +1221,19 @@ public class TypeChecker {
 		FunctionType ft = (FunctionType) funcType;
 		Type resultType = ft;
 
+		// Handle no-argument function calls with empty parentheses
+		if (call.params.size() == 0 && ft.args.size() == 0) {
+			return new CheckedNode(ft.type, call);
+		}
+		
+		// Handle function call with Unit argument to a no-argument function
 		if (call.params.size() == 1 && ft.args.size() == 0) {
 			Ast argAst = call.params.get(0);
 			CheckedNode argChecked = infer(argAst);
 			if (argChecked.type instanceof UnitType unit) {
 				call.auto = true;
 				call.params.removeLast();
-				return new CheckedNode(unit, call);
+				return new CheckedNode(ft.type, call);
 			}
 		}
 
