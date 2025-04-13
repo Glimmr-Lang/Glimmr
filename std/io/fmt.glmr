@@ -1,6 +1,0 @@
-
-type FmtArgs = [a]
-
-#[extern]
-fn format (fmt: String) (args: FmtArgs) : String = 
-	return Packages.java.lang.String.format(fmt, args);

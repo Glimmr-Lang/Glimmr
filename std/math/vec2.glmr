@@ -1,6 +1,0 @@
-
-type Vec2 = {x: Number, y: Number}
-
-fn vec2 a b : Vec2 = {x: a, y: b}
-
-fn origin : Vec2 = {x: 0, y: 0}
