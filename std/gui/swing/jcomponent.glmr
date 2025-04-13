@@ -1,0 +1,8 @@
+
+// https://docs.oracle.com/javase/8/docs/api/javax/swing/JComponent.html
+
+import std::gui::awt
+
+type JComponent = {}
+
+

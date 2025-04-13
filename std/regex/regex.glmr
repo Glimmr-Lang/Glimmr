@@ -1,0 +1,48 @@
+#[extern]
+fn test (pattern: String) (str: String) : Boolean = 
+	return new RegExp(pattern).test(str);
+
+#[extern]
+fn matchPattern (pattern: String) (str: String) : [String] = 
+	var matches = str.match(new RegExp(pattern, 'g'))
+	return matches || [];
+
+#[extern]
+fn matchAll (pattern: String) (str: String) : [[String]] = 
+	var regex = new RegExp(pattern, 'g')
+	var result = []
+	var match
+	while ((match = regex.exec(str)) !== null) {
+		result.push(match)
+	}
+	return result;
+
+#[extern]
+fn replace (pattern: String) (str: String) (replacement: String) : String = 
+	return str.replace(new RegExp(pattern, 'g'), replacement);
+
+#[extern]
+fn replaceFirst (pattern: String) (str: String) (replacement: String) : String = 
+	return str.replace(new RegExp(pattern), replacement);
+
+#[extern]
+fn split (pattern: String) (str: String) : [String] = 
+	return str.split(new RegExp(pattern));
+
+#[extern]
+fn escape (str: String) : String = 
+	return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+#[extern]
+fn create (pattern: String) (flags: String) : String = 
+	return new RegExp(pattern, flags).toString();
+
+#[extern]
+fn isValid (pattern: String) : Boolean = 
+	try {
+		new RegExp(pattern)
+		return true
+	} catch (e) {
+		return false
+	} ;
+

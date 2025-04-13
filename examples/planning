@@ -1,0 +1,19 @@
+
+#[Extern, Target(JS)] {
+	type Document = {}
+	fn get_document : Document = return document;
+
+	type HtmlElement = {id: String, innerText: String, innerHtml: String, className: String} 
+
+	fn get_element_by_id (document: Document) (id: String): HtmlElement = return document.getElementById(id);
+
+	fn set_inner_html (element: HtmlElement) (html: String): Unit = element.innerHtml = html; 
+
+	fn get_inner_html (element: HtmlElement) : String = return element.innerHtml;
+}
+
+fn jsx_component (x: String) : Native = 
+	<p> Hello ${x} </p>
+;
+
+

@@ -1,0 +1,6 @@
+
+type Vec3 = {x: Number, y: Number, z: Number}
+
+fn vec3 a b c : Vec3 = {x: a, y: b, z: c}
+
+fn origin : Vec3 = {x: 0, y: 0. z: 0}

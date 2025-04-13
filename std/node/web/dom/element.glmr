@@ -1,0 +1,54 @@
+type HTMLElement = {
+	autocapitalize: String,
+	autocorrect: Boolean,
+	autofocus: Boolean,
+	background: String,
+	baseURI: String,
+	baseColor: String,
+	childElementCount: Number,
+	children: HTMLCollection,
+	className: String,
+	clientHeight: Number,
+	clientLeft: Number,
+	clientTop: Number,
+	clientWidth: Number, 
+	contentEditable: String,
+	currentCSSZoom: Number,
+	dir: String,
+	draggable: Boolean,
+	enterKeyHint: String,
+	hidden: Boolean,
+	id: String, 
+	inert: Boolean,
+	innerHTML: String, 
+	innerText: String, 
+	inputMode: String,
+	isConnected: Boolean,
+	isContentEditable: Boolean,
+	lang: String, 
+	link:String,
+	localName: String,
+	namespaceURI: String
+}
+
+#[extern]
+fn appendChild (element: HTMLElement) (child: HTMLElement) : Unit = 
+	return element.appendChild(child);
+
+#[extern]
+fn setInnerText (element: HTMLElement) (text: String) : HTMLElement = 
+	element.innerText = text
+	return element;
+
+#[extern]
+fn setInnerHtml (element: HTMLElement) (text: String) : HTMLElement = 
+	element.innerHTML = text
+	return element;
+
+type EventHandler = a -> Unit
+
+#[extern]
+fn setOnClick (element: HTMLElement) (handler: EventHandler) : HTMLElement = 
+	element.onclick = handler
+	return element;
+

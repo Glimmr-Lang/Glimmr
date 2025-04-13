@@ -1,0 +1,50 @@
+
+type HTMLCollection = {}
+
+type HTMLDocument = {
+	URL: String,
+	activeElement: HtmlElement, 
+	alinkColor: String,
+	all: HTMLCollection,
+	anchors: HTMLCollection,
+	applets: HTMLCollection,
+	baseURI: String,
+	bgColor: String,
+	body: HTMLElement,
+	characterSet: String,
+	charset: String, 
+	childElementCount: Number,
+	children: HTMLCollection,
+	compatMode: String,
+	contentType: String,
+	cookie: String,
+	designMode: String,
+	dir: String,
+	documentURI: String,
+	domain: String,
+	embeds: HTMLCollection,
+	fgColor: String,
+	forms: HTMLCollection,
+	fullscreen: Boolean,
+	fullscreenEnabled: Boolean,
+	hasPendingL10nMutations: Boolean,
+	hidden: Boolean,
+	images: HTMLCollection,
+	inputEncoding: String,
+	isConnected: Boolean,
+	lastModified: String, 
+	linkColor: String
+}
+
+#[extern]
+fn getDocument : HTMLDocument =
+	return document;
+
+#[extern]
+fn createElement (document: HTMLDocument) (tag: String) : HTMLElement = 
+	return document.createElement(tag);
+
+// TODO: Fix this function. The error possibility should appear on the type
+#[extern]
+fn getElementById (doc: HTMLDocument) (id: String) : HTMLElement = 
+	return doc.getElementById(id);

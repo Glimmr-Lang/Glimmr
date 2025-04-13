@@ -1,0 +1,144 @@
+
+// The file type is Opaque
+type File = {}
+
+#[extern]
+fn file (path: String) : File = 
+	return new Packages.java.io.File(path);
+
+#[extern]
+fn canRead (file: File) : Boolean = 
+	return file.canRead();
+
+#[extern]
+fn canWrite (file: File) : Boolean = 
+	return file.canWrite();
+
+#[extern]
+fn canExecute (file: File) : Boolean = 
+	return file.canExecute();
+
+#[extern]
+fn exists (file: File) : Boolean = 
+	return file.exists();
+
+#[extern]
+fn getAbsoluteFile (file: File) : File = 
+	return file.getAbsoluteFile();
+
+#[extern]
+fn getAbsolutePath (file: File) : String = 
+	return file.getAbsolutePath();
+
+#[extern]
+fn getCanonicalFile (file: File) : File = 
+	return file.getCanonicalFile();
+
+#[extern]
+fn getCanonicalPath (file: File) : String = 
+	return file.getCanonicalPath();
+
+#[extern]
+fn getFreeSpace (file: File) : Number = 
+	return file.getFreeSpace();
+
+#[extern]
+fn getName (file: File) : String = 
+	return file.getName();
+
+#[extern]
+fn getParent (file: File) : String = 
+	return file.getParent();
+
+#[extern]
+fn getParentFile (file: File) : File = 
+	return file.getParentFile();
+
+#[extern]
+fn getPath (file: File) : String = 
+	return file.getPath();
+
+#[extern]
+fn getTotalSpace (file: File) : Number =
+	return file.getTotalSpace();
+
+#[extern]
+fn getUsableSpace (file: File) : Number =
+	return file.getUsableSpace();
+
+#[extern]
+fn isAbsolute (file: File) : Boolean = 
+	return file.isAbsolute();
+
+#[extern]
+fn isDirectory (file: File) : Boolean = 
+	return file.isDirectory();
+
+#[extern]
+fn isFile (file: File) : Boolean = 
+	return file.isFile();
+
+
+#[extern]
+fn isHidden (file: File) : Boolean = 
+	return file.isHidden();
+
+#[extern]
+fn lastModified(file: File) : Number= 
+	return file.lastModified();
+
+#[extern]
+fn length (file: File) : Number= 
+	return file.length();
+
+#[extern]
+fn list (file: File) : [String] = 
+	return file.list();
+
+#[extern]
+fn listRoots (file: File) : [File] = 
+	return file.roots();
+
+#[extern]
+fn mkdir (file: File) : Boolean = 
+	return file.mkdir();
+
+#[extern]
+fn mkdirs (file: File) : Boolean = 
+	return file.mkdirs();
+
+#[extern]
+fn renameTo (file: File) (to: File)  : Boolean = 
+	return file.renameTo(to);
+
+#[extern]
+fn setExecutable (file: File) (value: Boolean)  : Boolean = 
+	return file.setExecutable (value);
+
+#[extern]
+fn setLastModified(file: File) (value: Number)  : Boolean = 
+	return file.setLastModified(value);
+
+#[extern]
+fn setReadable (file: File) (value: Boolean)  : Boolean = 
+	return file.setReadable (value);
+
+#[extern]
+fn setReadOnly (file: File) : Boolean = 
+	return file.setReadOnly;
+
+#[extern]
+fn setWritable (file: File) (value: Boolean)  : Boolean = 
+	return file.setWritable (value);
+
+#[extern]
+fn create (file: File) : Boolean = 
+	return file.createNewFile();
+
+#[extern]
+fn deleteFile(file: File) : Boolean = 
+	return file.delete();
+
+#[extern]
+fn deleteOnExit(file: File) : Boolean = 
+	return file.deleteOnExit();
