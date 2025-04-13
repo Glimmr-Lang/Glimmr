@@ -44,9 +44,13 @@ fn endsWith (str: String) (s: String) : Boolean =
 	return str.endsWith(s);
 
 #[extern]
-fn subString(str: String) (start: Number) : Boolean = 
+fn subString (str: String) (start: Number) : Boolean = 
 	return str.substring(start);
 
 #[extern]
-fn subStringRange(str: String) (start: Number) (end: Number) : Boolean = 
+fn subStringRange (str: String) (start: Number) (end: Number) : Boolean = 
 	return str.substring(start, end);
+
+#[extern]
+fn strOf (a: t) : String = 
+  return a.toString();

@@ -37,11 +37,11 @@ type HTMLDocument = {
 }
 
 #[extern]
-fn getDocument(): HTMLDocument =
+fn getDocument : HTMLDocument =
 	return document;
 
 #[extern]
-fn createElement (tag: String) : HTMLElement = 
+fn createElement (document: HTMLDocument) (tag: String) : HTMLElement = 
 	return document.createElement(tag);
 
 // TODO: Fix this function. The error possibility should appear on the type

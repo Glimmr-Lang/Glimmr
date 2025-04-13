@@ -1,0 +1,33 @@
+
+// https://docs.oracle.com/javase/8/docs/api/java/awt/Container.html
+
+type Container = {}
+
+#[extern]
+fn setSize (component: Container) (w: Number) (h: Number) : Container = 
+  component.setSize(w, h)
+  return component;
+
+#[extern]
+fn add (parent: Container) (child: Container) : Container = 
+  parent.add(child)
+  return parent;
+
+#[extern]
+fn setVisible (component: Container) (value: Boolean) : Container = 
+  component.setVisible (value)
+  return component;
+
+#[extern]
+fn remove (parent: Container) (child: Container) : Container = 
+  parent.remove(child)
+  return parent;
+
+#[extern]
+fn addNotify (component: Container) : Container = 
+  component.addNotify()
+  return component;
+
+
+
+

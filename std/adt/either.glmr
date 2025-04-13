@@ -1,8 +1,8 @@
 
 type Either = Left a | Right b
 
-fn left a = Left a
+fn left a = Left(a)
 
-fn right a = Right a 
+fn right a = Right(a) 
 
-fn leftOrRight (f: a -> Boolean) a = if (f a) then Left a else Right a
+fn leftOrRight (f: a -> Boolean) a = if f(a) then Left(a) else Right(a)

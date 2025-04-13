@@ -36,19 +36,19 @@ fn appendChild (element: HTMLElement) (child: HTMLElement) : Unit =
 	return element.appendChild(child);
 
 #[extern]
-fn innerText (element: HTMLElement) (text: String) : HTMLElement = 
+fn setInnerText (element: HTMLElement) (text: String) : HTMLElement = 
 	element.innerText = text
 	return element;
 
 #[extern]
-fn innerHtml (element: HTMLElement) (text: String) : HTMLElement = 
+fn setInnerHtml (element: HTMLElement) (text: String) : HTMLElement = 
 	element.innerHTML = text
 	return element;
 
 type EventHandler = a -> Unit
 
 #[extern]
-fn onClick (element: HTMLElement) (handler: EventHandler) : HTMLElement = 
+fn setOnClick (element: HTMLElement) (handler: EventHandler) : HTMLElement = 
 	element.onclick = handler
 	return element;
 
