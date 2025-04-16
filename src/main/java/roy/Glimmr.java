@@ -1,7 +1,3 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- */
-
 package roy;
 
 /**
@@ -11,6 +7,7 @@ package roy;
 public class Glimmr {
 
     public static void main(String[] args) {
-    	Compiler.run(args);
+			Compiler compiler = new Compiler();
+    	compiler.run(args);
 		}
 }

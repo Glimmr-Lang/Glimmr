@@ -5,6 +5,7 @@ import roy.parser.Lexer;
 import roy.parser.Parser;
 import roy.typechecker.TypeChecker;
 import org.graalvm.polyglot.Context;
+import roy.rt.ContextCallback;
 /**
  *
  * @author hexaredecimal
@@ -14,7 +15,7 @@ public class Compiler {
 	/**
 	 * @param args the command line arguments
 	 */
-	public static void run(String[] args) {
+	public void run(String[] args) {
 		System.setProperty("-Dnashorn.args", "--language=es6");
 		Lexer lexer = new Lexer("./examples/hello.glmr");
 		var tokens = lexer.lex();
@@ -37,7 +38,10 @@ public class Compiler {
 
 		//Fs.writeToFile(new File("./out.js"), result);
 		//System.out.println("" + result);
-		runCode(result, args);
+		final String runnable = result;
+		graal(() -> {
+			runCode(runnable, args);
+		});
 		//*/
 	}
 
@@ -50,6 +54,13 @@ public class Compiler {
 			context.getBindings("js").putMember("__args__", args);
 			context.eval("js", code);
 		}
+	}
+
+	private void graal(ContextCallback callback) {
+		ClassLoader oldCl = Thread.currentThread().getContextClassLoader();
+		Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+		callback.call();
+		Thread.currentThread().setContextClassLoader(oldCl);
 	}
 
 
