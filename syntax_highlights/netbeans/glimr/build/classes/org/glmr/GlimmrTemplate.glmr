@@ -1,0 +1,4 @@
+
+import std::io { println }
+
+fn main (): Unit = println("Hello, glimmr!")

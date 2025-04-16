@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?><module codename="org.glmr">
+    <module_version install_time="1744751958515" last="true" origin="installer" specification_version="1.0">
+        <file crc="1647961302" name="config/Modules/org-glmr.xml"/>
+        <file crc="3834117565" name="modules/org-glmr.jar"/>
+    </module_version>
+</module>
