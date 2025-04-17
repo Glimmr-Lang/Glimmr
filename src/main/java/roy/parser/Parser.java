@@ -27,7 +27,7 @@ import roy.ast.JSCode;
 import roy.ast.Let;
 import roy.ast.LetIn;
 import roy.ast.ListPattern;
-import roy.ast.Match;
+import roy.ast.When;
 import roy.ast.MatchCase;
 import roy.ast.ModuleAccess;
 import roy.ast.ObjectPattern;
@@ -713,19 +713,16 @@ public class Parser {
 
 		var result = ternary();
 
-		top = peek(0);
-		if (match(TokenKind.KEYWORD) && top.text.equals("match")) {
-			return matchExpression(result);
-		}
 		return result;
 	}
 
-	private Ast matchExpression(Ast match) {
+	private Ast matchExpression() {
 		next();
+		var match = expression();
 		expect(TokenKind.LBRACE, "Braces required around match expression");
 		var t = peek(0);
 		List<MatchCase> cases = new ArrayList<>();
-		while (match(TokenKind.BITWISE_OPERATOR) && t.text.equals("|")) {
+		while (match(TokenKind.KEYWORD) && t.text.equals("is")){
 			next();
 			var p = parsePattern();
 			expect(TokenKind.ARROW, "Expected `->` after pattern expression");
@@ -735,8 +732,15 @@ public class Parser {
 		}
 
 		t = peek(0);
+		Ast body = null;
+		if (match(TokenKind.KEYWORD) && t.text.equals("else")) {
+			next();
+			expect(TokenKind.ARROW, "Expected `->` after pattern expression");
+			body = expression();
+		}
+		t = peek(0);
 		expect(TokenKind.RBRACE, "Expected closing brace at the end of match expression, but found `" + t.text + "`");
-		return new Match(match, cases);
+		return new When(match, cases, body);
 	}
 
 	private Pattern parsePattern() {
@@ -755,14 +759,6 @@ public class Parser {
 	}
 
 	private Pattern _parsePattern() {
-		var t = peek(0);
-		var next = peek(1);
-		if (match(TokenKind.LBRACE)) {
-			return objectPattern();
-		} else if (match(TokenKind.LPAREN)) {
-			return tuplePattern();
-		}
-
 		var expr = expression();
 		return toPattern(expr);
 	}
@@ -771,10 +767,13 @@ public class Parser {
 		List<Pattern> points = new ArrayList<>();
 
 		if (node instanceof RObject obj) {
-			for (var key : obj.obj.keySet()) {
-				points.add(new ExpressionPattern(new Identifier(key)));
+			HashMap<Identifier, Ast> object = new HashMap<>();
+			for (var kv : obj.obj.entrySet()) {
+				var key = kv.getKey();
+				var value = kv.getValue();
+				object.put(new Identifier(key), value);
 			}
-			return new ObjectPattern(points);
+			return new ObjectPattern(object);
 		}
 
 		if (node instanceof Tuple tuple) {
@@ -812,7 +811,7 @@ public class Parser {
 		if (ast instanceof IfElse i) {
 			return getErrTokenFromAst(i.cond);
 		}
-		if (ast instanceof Match m) {
+		if (ast instanceof When m) {
 			return getErrTokenFromAst(m.match);
 		}
 		if (ast instanceof BinOp b) {
@@ -832,38 +831,7 @@ public class Parser {
 		return null;
 	}
 
-	private Pattern objectPattern() {
-		List<Pattern> points = new ArrayList<>();
-		next();
-		while (!match(TokenKind.RBRACE)) {
-			var pattern = parsePattern();
-			var t = peek(0);
-			points.add(pattern);
-			if (t.kind == TokenKind.RPAREN) {
-				break;
-			}
-			expect(TokenKind.COMMA, "Expected `,` between expressions object pattern");
-		}
-		next();
-		return new ObjectPattern(points);
-	}
 
-	private Pattern tuplePattern() {
-		List<Pattern> points = new ArrayList<>();
-
-		next();
-		while (!match(TokenKind.RBRACE)) {
-			var pattern = parsePattern();
-			var t = peek(0);
-			points.add(pattern);
-			if (t.kind == TokenKind.RPAREN) {
-				break;
-			}
-			expect(TokenKind.COMMA, "Expected `,` between expressions object pattern");
-		}
-		next();
-		return new TuplePattern(points);
-	}
 
 	private Ast blockOrObject() {
 		next();
@@ -1341,6 +1309,15 @@ public class Parser {
 		var top = peek(0);
 		if (match(TokenKind.KEYWORD) && top.text.equals("if")) {
 			return ifStatement();
+		}
+		Ast result = whenExpression();
+		return result;
+	}
+
+	private Ast whenExpression() {
+		var top = peek(0);
+		if (match(TokenKind.KEYWORD) && top.text.equals("when")) {
+			return matchExpression();
 		}
 		Ast result = blockOrClosureOrObject();
 		return result;
