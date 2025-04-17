@@ -69,7 +69,7 @@ public class Lexer {
 
 	static {
 		KEYWORDS.put("fn", new Token(TokenKind.KEYWORD, "fn"));
-		KEYWORDS.put("match", new Token(TokenKind.KEYWORD, "match"));
+		KEYWORDS.put("when", new Token(TokenKind.KEYWORD, "when"));
 		KEYWORDS.put("if", new Token(TokenKind.KEYWORD, "if"));
 		KEYWORDS.put("else", new Token(TokenKind.KEYWORD, "else"));
 		KEYWORDS.put("then", new Token(TokenKind.KEYWORD, "then"));
@@ -80,6 +80,7 @@ public class Lexer {
 		KEYWORDS.put("where", new Token(TokenKind.KEYWORD, "where"));
 		KEYWORDS.put("type", new Token(TokenKind.KEYWORD, "type"));
 		KEYWORDS.put("import", new Token(TokenKind.KEYWORD, "import"));
+		KEYWORDS.put("is", new Token(TokenKind.KEYWORD, "is"));
 	}
 
 	private List<ErrorNode> errors;
