@@ -6,26 +6,33 @@ import java.util.List;
  *
  * @author hexaredecimal
  */
-public class Match implements Ast {
+public class When implements Ast {
 	public Ast match;
 	public List<MatchCase> cases; 
+	public Ast _else;
 
-	public Match(Ast match, List<MatchCase> patterns) {
+	public When(Ast match, List<MatchCase> patterns, Ast _else) {
 		this.match = match;
 		this.cases = patterns;
+		this._else = _else;
 	}
 
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
 		sb
-			.append("match ")
+			.append("when ")
 			.append(match)
-			.append("\n");
+			.append(" { \n");
 		
 		for (var casse: cases) {
-			sb.append(String.format("| %s ", casse).indent(4));
+			sb.append(String.format("is %s ", casse).indent(4));
 		}
+
+		if (_else != null) {
+			sb.append(String.format("else -> %s ", _else).indent(4));
+		}
+		sb.append("}");
 
 		return sb.toString();
 	}
