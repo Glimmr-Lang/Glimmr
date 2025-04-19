@@ -778,14 +778,14 @@ public class Parser {
 
 		if (node instanceof Tuple tuple) {
 			for (var point : tuple.values) {
-				points.add(new ExpressionPattern(point));
+				points.add(toPattern(point));
 			}
 			return new TuplePattern(points);
 		}
 
 		if (node instanceof Call call) {
 			for (var point : call.params) {
-				points.add(new ExpressionPattern(point));
+				points.add(toPattern(point));
 			}
 			return new ConsPattern(call.expr, points);
 		}
