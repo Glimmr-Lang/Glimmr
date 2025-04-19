@@ -1,0 +1,5 @@
+Manifest-Version: 1.0
+Created-By: 24+36-jvmci-b01 (Oracle Corporation)
+Class-Path: 
+X-COMMENT: Main-Class will be added automatically by build
+Main-Class: roy.Glimmer
