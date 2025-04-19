@@ -254,6 +254,7 @@ public class Lexer {
 		}
 
 		id += '.' + sb.toString();
+		id = id.replaceAll("_", "").trim();
 		if (top == '\n') {
 			col -= 1;
 		}
