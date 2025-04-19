@@ -1,5 +1,6 @@
 package roy.codegen;
 
+import roy.codegen.jsast.WhenExpression;
 import java.lang.invoke.CallSite;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,6 +26,7 @@ import roy.ast.RObject;
 import roy.ast.RString;
 import roy.ast.TypeAlias;
 import roy.ast.Unit;
+import roy.ast.When;
 import roy.codegen.jsast.CodegenAst;
 import roy.codegen.jsast.JBinOp;
 import roy.codegen.jsast.JBlock;
@@ -43,6 +45,7 @@ import roy.codegen.jsast.JStringCodeEmbed;
 import roy.codegen.jsast.NumberLiteral;
 import roy.codegen.jsast.StringLiteral;
 import roy.codegen.jsast.UnitLiteral;
+import roy.codegen.jsast.WhenCases;
 import roy.rt.It;
 import roy.tokens.TokenKind;
 
@@ -204,10 +207,30 @@ public class Codegen {
 			return codegenModuleAccess(ma);
 		}
 
+		if (expr instanceof When when) {
+			return codegenWhenExpression(when);
+		}
+
 		It.todo(expr.getClass().getName());
 		return null;
 	}
 
+	private CodegenAst  codegenWhenExpression(When when) {
+		var cond = codegenExpr(when.match);
+		List<WhenCases> cases = new ArrayList<>();
+		for (var match : when.cases) {
+			var lhs = match.pattern;
+			var rhs = codegenExpr(new Block(List.of(match.body)));
+			cases.add(new WhenCases(lhs, rhs));
+		}
+
+		CodegenAst _elze = null;
+		if (when._else != null) {
+			_elze = codegenExpr(new Block(List.of(when._else)));
+		}
+		return new WhenExpression(cond, cases, _elze);
+	}
+	
 	private CodegenAst codegenModuleAccess(ModuleAccess ma) {
 		//var expr = codegenExpr(ma.module);
 		return new JIdentifier(ma.field.value.text);
