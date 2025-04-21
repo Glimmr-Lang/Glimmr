@@ -252,12 +252,11 @@ public class TypeChecker {
 			}
 		}
 
-		/*
 		for (var kv: functionTypes.entrySet()) {
 			var name = kv.getKey();
 			var type = kv.getValue(); 
 			System.out.println("fn " + name + " : " + type);
-		} */
+		} 
 		// Print results
 	}
 
@@ -487,12 +486,17 @@ public class TypeChecker {
 			Type patternType = inferPatternType(casse.pattern, matchType);
 			patternTypes.add(patternType);
 
-			// If match expression has explicit type, verify pattern compatibility
-			if (hasExplicitType) {
-				try {
-					unify(matchType, patternType, casse.pattern);
-				} catch (TypeMismatchError e) {
-					// For explicit types, report an error when patterns don't match
+			// Apply substitutions to get the most concrete types
+			patternType = applySubstitutions(patternType);
+			
+			// Try to unify the pattern type with the match type
+			try {
+				unify(matchType, patternType, casse.pattern);
+				// Apply substitutions immediately to propagate constraints
+				applyAllSubstitutions();
+			} catch (TypeMismatchError e) {
+				// For explicit types, report an error when patterns don't match
+				if (hasExplicitType) {
 					Token token = getTokenFromAst(casse.pattern);
 					Errors.reportTypeCheckError(token,
 									"Pattern of type " + patternType + " is not compatible with match expression of type " + matchType);
@@ -500,17 +504,29 @@ public class TypeChecker {
 				}
 			}
 
-			// Keep track of bind patterns for later unification
-			if (casse.pattern instanceof BindPattern) {
-				bindPatterns.add((BindPattern) casse.pattern);
-			}
+			// Collect all bind patterns (including nested ones in tuples)
+			collectBindPatterns(casse.pattern, bindPatterns);
 		}
 
-		// Identify concrete types among the patterns (non-TypeVariable types)
+		// Apply substitutions again after all patterns have been processed
+		applyAllSubstitutions();
+		matchType = applySubstitutions(matchType);
+
+		// Collect concrete types from numeric literals and other concrete patterns
 		List<Type> concreteTypes = new ArrayList<>();
-		for (Type type : patternTypes) {
-			if (!(type instanceof TypeVariable)) {
-				concreteTypes.add(type);
+		collectConcreteTypesFromPatterns(when.cases, concreteTypes);
+
+		// If we have concrete types, try to apply them to type variables in the match type
+		if (!concreteTypes.isEmpty() && matchType instanceof TypeVariable) {
+			// For simple types like Number, String, etc., use the concrete type directly
+			if (concreteTypes.size() == 1 && isPrimitiveType(concreteTypes.get(0))) {
+				try {
+					substituteTypeVar((TypeVariable) matchType, concreteTypes.get(0));
+					applyAllSubstitutions();
+					matchType = applySubstitutions(matchType);
+				} catch (Exception e) {
+					// If substitution fails, keep the original type
+				}
 			}
 		}
 
@@ -561,6 +577,19 @@ public class TypeChecker {
 						// If unification fails, keep going
 					}
 				}
+			} else if (casse.pattern instanceof TuplePattern tuplePattern) {
+				// For tuple patterns, we handle each element's bind patterns separately
+				if (matchType instanceof TupleType matchTupleType) {
+					// Reconcile each element of the tuple pattern with the corresponding
+					// element of the match tuple type
+					reconcileTuplePatternTypes(tuplePattern, matchTupleType);
+				} else if (matchType instanceof TypeVariable) {
+					// The match type might have been unified with a tuple type during pattern inference
+					Type updatedMatchType = applySubstitutions(matchType);
+					if (updatedMatchType instanceof TupleType) {
+						reconcileTuplePatternTypes(tuplePattern, (TupleType) updatedMatchType);
+					}
+				}
 			}
 
 			// Now infer the body type with the updated symbol table
@@ -570,6 +599,10 @@ public class TypeChecker {
 			Type bodyType = applySubstitutions(bodyChecked.type);
 			bodyTypes.add(bodyType);
 		}
+
+		// Apply substitutions again to propagate all constraints
+		applyAllSubstitutions();
+		matchType = applySubstitutions(matchType);
 
 		// Restore original local symbol table
 		localSymbolTable.clear();
@@ -671,6 +704,140 @@ public class TypeChecker {
 		return new CheckedNode(outputType, when);
 	}
 
+	// Helper method to collect concrete types from patterns
+	private void collectConcreteTypesFromPatterns(List<MatchCase> cases, List<Type> concreteTypes) {
+		for (MatchCase casse : cases) {
+			collectConcreteTypesFromPattern(casse.pattern, concreteTypes);
+		}
+	}
+
+	// Helper method to collect concrete types from a pattern
+	private void collectConcreteTypesFromPattern(Pattern pattern, List<Type> concreteTypes) {
+		if (pattern instanceof ExpressionPattern exprPattern) {
+			if (exprPattern.expr instanceof roy.ast.Number) {
+				concreteTypes.add(new NumberType());
+			} else if (exprPattern.expr instanceof RString) {
+				concreteTypes.add(new StringType());
+			}
+		} else if (pattern instanceof TuplePattern tuplePattern) {
+			// For tuples, recursively collect concrete types from elements
+			for (Pattern elementPattern : tuplePattern.exprs) {
+				collectConcreteTypesFromPattern(elementPattern, concreteTypes);
+			}
+		} else if (pattern instanceof ListPattern listPattern) {
+			// For lists, recursively collect concrete types from elements
+			for (Pattern elementPattern : listPattern.exprs) {
+				collectConcreteTypesFromPattern(elementPattern, concreteTypes);
+			}
+		} else if (pattern instanceof ConsPattern consPattern) {
+			// For constructor patterns, recursively collect concrete types from arguments
+			for (Pattern elementPattern : consPattern.exprs) {
+				collectConcreteTypesFromPattern(elementPattern, concreteTypes);
+			}
+		}
+	}
+
+	// Helper method to collect all bind patterns, including those nested in tuple patterns
+	private void collectBindPatterns(Pattern pattern, List<BindPattern> bindPatterns) {
+		if (pattern instanceof BindPattern bindPattern) {
+			bindPatterns.add(bindPattern);
+		} else if (pattern instanceof TuplePattern tuplePattern) {
+			for (Pattern elementPattern : tuplePattern.exprs) {
+				collectBindPatterns(elementPattern, bindPatterns);
+			}
+		} else if (pattern instanceof ListPattern listPattern) {
+			for (Pattern elementPattern : listPattern.exprs) {
+				collectBindPatterns(elementPattern, bindPatterns);
+			}
+		} else if (pattern instanceof ConsPattern consPattern) {
+			for (Pattern elementPattern : consPattern.exprs) {
+				collectBindPatterns(elementPattern, bindPatterns);
+			}
+		}
+	}
+
+	// Helper method to reconcile tuple pattern types with a tuple type
+	private void reconcileTuplePatternTypes(TuplePattern tuplePattern, TupleType tupleType) {
+		int size = Math.min(tuplePattern.exprs.size(), tupleType.nodes.size());
+		for (int i = 0; i < size; i++) {
+			Pattern elementPattern = tuplePattern.exprs.get(i);
+			Type elementType = tupleType.nodes.get(i);
+			
+			// If the element pattern is a literal number, make sure the element type is NumberType
+			if (elementPattern instanceof ExpressionPattern exprPattern && 
+				exprPattern.expr instanceof roy.ast.Number && 
+				elementType instanceof TypeVariable) {
+				
+				try {
+					NumberType numberType = new NumberType();
+					substituteTypeVar((TypeVariable) elementType, numberType);
+					tupleType.nodes.set(i, numberType);
+				} catch (Exception e) {
+					// If substitution fails, continue with existing type
+				}
+			}
+			// Similarly for string literals
+			else if (elementPattern instanceof ExpressionPattern exprPattern && 
+					exprPattern.expr instanceof RString && 
+					elementType instanceof TypeVariable) {
+				
+				try {
+					StringType stringType = new StringType();
+					substituteTypeVar((TypeVariable) elementType, stringType);
+					tupleType.nodes.set(i, stringType);
+				} catch (Exception e) {
+					// If substitution fails, continue with existing type
+				}
+			}
+			// Handle bind patterns
+			else if (elementPattern instanceof BindPattern bindPattern) {
+				String varName = bindPattern.name.value.text;
+				if (localSymbolTable.containsKey(varName)) {
+					Type varType = localSymbolTable.get(varName);
+					try {
+						unify(varType, elementType, bindPattern);
+						// Update the variable's type in the symbol table
+						localSymbolTable.put(varName, elementType);
+					} catch (TypeMismatchError e) {
+						// If unification fails, keep the original type
+					}
+				}
+			} 
+			// Handle nested tuple patterns recursively
+			else if (elementPattern instanceof TuplePattern nestedTuplePattern) {
+				// Recursive handling for nested tuples
+				if (elementType instanceof TupleType nestedTupleType) {
+					reconcileTuplePatternTypes(nestedTuplePattern, nestedTupleType);
+				} else if (elementType instanceof TypeVariable) {
+					// Create a new tuple type for the nested tuple pattern
+					List<Type> nestedTypes = new ArrayList<>();
+					for (Pattern nestedElement : nestedTuplePattern.exprs) {
+						Type nestedType = freshTypeVar(getTokenFromAst(nestedElement));
+						if (nestedElement instanceof ExpressionPattern exprPattern && 
+							exprPattern.expr instanceof roy.ast.Number) {
+							nestedType = new NumberType();
+						} else if (nestedElement instanceof ExpressionPattern exprPattern && 
+							exprPattern.expr instanceof RString) {
+							nestedType = new StringType();
+						}
+						nestedTypes.add(nestedType);
+					}
+					
+					TupleType newNestedTupleType = new TupleType(nestedTypes);
+					try {
+						substituteTypeVar((TypeVariable) elementType, newNestedTupleType);
+						// Update the tuple type's element
+						tupleType.nodes.set(i, newNestedTupleType);
+						// Now reconcile the nested pattern with the new tuple type
+						reconcileTuplePatternTypes(nestedTuplePattern, newNestedTupleType);
+					} catch (Exception e) {
+						// If substitution fails, keep original type
+					}
+				}
+			}
+		}
+	}
+
 	/**
 	 * Infer the type of a pattern
 	 */
@@ -742,6 +909,33 @@ public class TypeChecker {
 			CheckedNode exprChecked = infer(exprPattern.expr);
 			Type patternType = exprChecked.type;
 
+			// If the pattern is a literal number, constrain the match type to be a NumberType
+			if (exprPattern.expr instanceof roy.ast.Number) {
+				if (matchType instanceof TypeVariable) {
+					// Constrain the match type to be a NumberType
+					try {
+						NumberType numberType = new NumberType();
+						substituteTypeVar((TypeVariable) matchType, numberType);
+						patternType = numberType;
+					} catch (Exception e) {
+						// If substitution fails, keep the original pattern type
+					}
+				}
+			}
+			// Similarly for string literals
+			else if (exprPattern.expr instanceof RString) {
+				if (matchType instanceof TypeVariable) {
+					// Constrain the match type to be a StringType
+					try {
+						StringType stringType = new StringType();
+						substituteTypeVar((TypeVariable) matchType, stringType);
+						patternType = stringType;
+					} catch (Exception e) {
+						// If substitution fails, keep the original pattern type
+					}
+				}
+			}
+
 			// If we're matching against a concrete type, enforce compatibility
 			if (!(matchType instanceof TypeVariable)) {
 				try {
@@ -775,17 +969,82 @@ public class TypeChecker {
 			return matchType;
 		} else if (pattern instanceof TuplePattern tuplePattern) {
 			// For tuple patterns, check each element
-			if (!(matchType instanceof TupleType)) {
+			if (!(matchType instanceof TupleType) && !(matchType instanceof TypeVariable)) {
 				// If matching against explicit non-tuple type, error
-				if (!(matchType instanceof TypeVariable)) {
-					Errors.reportTypeCheckError(getTokenFromAst(tuplePattern),
-									"Cannot match tuple pattern against non-tuple type " + matchType);
-					System.exit(0);
-				}
-				// If inferred, this pattern won't match
-				return matchType;
+				Errors.reportTypeCheckError(getTokenFromAst(tuplePattern),
+								"Cannot match tuple pattern against non-tuple type " + matchType);
+				System.exit(0);
 			}
-			return matchType;
+			
+			// If matching against a type variable, create a tuple type with appropriate structure
+			if (matchType instanceof TypeVariable) {
+				List<Type> elementTypes = new ArrayList<>();
+				
+				// First determine proper types for each element
+				for (Pattern elementPattern : tuplePattern.exprs) {
+					// Default to a fresh type variable
+					Type elementType = freshTypeVar(getTokenFromAst(elementPattern));
+					
+					// If this element is an expression pattern with a literal number, use NumberType
+					if (elementPattern instanceof ExpressionPattern exprPattern && 
+						exprPattern.expr instanceof roy.ast.Number) {
+						elementType = new NumberType();
+					}
+					// If this element is an expression pattern with a string literal, use StringType
+					else if (elementPattern instanceof ExpressionPattern exprPattern && 
+						exprPattern.expr instanceof RString) {
+						elementType = new StringType();
+					}
+					// If this is a nested tuple pattern, handle it recursively
+					else if (elementPattern instanceof TuplePattern nestedTuplePattern) {
+						// Create a fresh type for the nested tuple and process it
+						Type nestedTupleType = freshTypeVar(getTokenFromAst(nestedTuplePattern));
+						elementType = inferPatternType(nestedTuplePattern, nestedTupleType);
+					}
+					// For other patterns, use the inferred type
+					else {
+						elementType = inferPatternType(elementPattern, elementType);
+					}
+					
+					// Add the element type to our list
+					elementTypes.add(elementType);
+				}
+				
+				// Create a tuple type with the inferred element types
+				TupleType tupleType = new TupleType(elementTypes);
+				
+				// Unify the match type with our constructed tuple type
+				try {
+					unify(matchType, tupleType, tuplePattern);
+					applyAllSubstitutions();
+					return applySubstitutions(tupleType);
+				} catch (TypeMismatchError e) {
+					// This shouldn't happen since we're unifying with a type variable
+					return matchType;
+				}
+			}
+			
+			// Otherwise, we're matching against a concrete tuple type
+			// Verify that the tuple pattern has the same arity as the match tuple type
+			TupleType tupleType = (TupleType) matchType;
+			if (tuplePattern.exprs.size() != tupleType.nodes.size()) {
+				Errors.reportTypeCheckError(getTokenFromAst(tuplePattern),
+								"Tuple pattern has " + tuplePattern.exprs.size() + 
+								" elements, but the match expression has " + tupleType.nodes.size() + " elements");
+				System.exit(0);
+			}
+			
+			// Process each element of the tuple pattern against the corresponding element type
+			// of the match tuple type, and return a new tuple type with the inferred element types
+			List<Type> inferredElementTypes = new ArrayList<>();
+			for (int i = 0; i < tuplePattern.exprs.size(); i++) {
+				Pattern elementPattern = tuplePattern.exprs.get(i);
+				Type elementMatchType = tupleType.nodes.get(i);
+				Type inferredElementType = inferPatternType(elementPattern, elementMatchType);
+				inferredElementTypes.add(inferredElementType);
+			}
+			
+			return new TupleType(inferredElementTypes);
 		} else if (pattern instanceof ObjectPattern objPattern) {
 			// For object patterns, check each field
 			if (!(matchType instanceof ObjectType)) {
@@ -1973,6 +2232,24 @@ public class TypeChecker {
 			return;
 		}
 
+		// Handle TupleType unification
+		if (t1 instanceof TupleType && t2 instanceof TupleType) {
+			TupleType tt1 = (TupleType) t1;
+			TupleType tt2 = (TupleType) t2;
+
+			// Check if both tuples have the same number of elements
+			if (tt1.nodes.size() != tt2.nodes.size()) {
+				throw new TypeMismatchError("Tuple nodes have different sizes: " + 
+					tt1.nodes.size() + " vs " + tt2.nodes.size());
+			}
+
+			// Unify each element type
+			for (int i = 0; i < tt1.nodes.size(); i++) {
+				unify(tt1.nodes.get(i), tt2.nodes.get(i), node);
+			}
+			return;
+		}
+
 		// Handle UnionType specially
 		if (t1 instanceof UnionType && t2 instanceof UnionType) {
 			UnionType ut1 = (UnionType) t1;
@@ -2300,6 +2577,23 @@ public class TypeChecker {
 					result = new AppType(at.cons, newArgs);
 					changed = true;
 				}
+			} else if (result instanceof TupleType) {
+				TupleType tt = (TupleType) result;
+				List<Type> newTypes = new ArrayList<>();
+				boolean typesChanged = false;
+
+				for (Type elemType : tt.nodes) {
+					Type newType = applySubstitutions(elemType);
+					newTypes.add(newType);
+					if (newType != elemType) {
+						typesChanged = true;
+					}
+				}
+
+				if (typesChanged) {
+					result = new TupleType(newTypes);
+					changed = true;
+				}
 			} else if (result instanceof UnionType) {
 				UnionType ut = (UnionType) result;
 				List<Type> newTypes = new ArrayList<>();
@@ -2334,7 +2628,16 @@ public class TypeChecker {
 					result = new ObjectType(newFields);
 					changed = true;
 				}
+			} else if (result instanceof ListType) {
+				ListType lt = (ListType) result;
+				Type newElementType = applySubstitutions(lt.inner);
+				
+				if (newElementType != lt.inner) {
+					result = new ListType(newElementType);
+					changed = true;
+				}
 			}
+
 		} while (changed);
 
 		return result;
@@ -2342,11 +2645,6 @@ public class TypeChecker {
 
 	// Check if a type variable occurs in a type (occurs check)
 	private boolean occursIn(TypeVariable tv, Type type) {
-		// Add special case for NamedType
-		if (type instanceof NamedType) {
-			return false; // A TypeVariable can't occur in a NamedType
-		}
-
 		if (type instanceof TypeVariable) {
 			return tv.equals(type);
 		}
@@ -2370,6 +2668,15 @@ public class TypeChecker {
 				}
 			}
 		}
+		if (type instanceof TupleType) {
+			TupleType tt = (TupleType) type;
+
+			for (Type elemType : tt.nodes) {
+				if (occursIn(tv, elemType)) {
+					return true;
+				}
+			}
+		}
 		if (type instanceof UnionType) {
 			UnionType ut = (UnionType) type;
 
@@ -2387,6 +2694,10 @@ public class TypeChecker {
 					return true;
 				}
 			}
+		}
+		if (type instanceof ListType) {
+			ListType lt = (ListType) type;
+			return occursIn(tv, lt.inner);
 		}
 		return false;
 	}
@@ -2453,6 +2764,25 @@ public class TypeChecker {
 			}
 			return at;
 		}
+		if (type instanceof TupleType) {
+			TupleType tt = (TupleType) type;
+
+			List<Type> newTypes = new ArrayList<>();
+			boolean typesChanged = false;
+
+			for (Type elemType : tt.nodes) {
+				Type newType = substituteInType(elemType, tv, replacement);
+				newTypes.add(newType);
+				if (newType != elemType) {
+					typesChanged = true;
+				}
+			}
+
+			if (typesChanged) {
+				return new TupleType(newTypes);
+			}
+			return tt;
+		}
 		if (type instanceof UnionType) {
 			UnionType ut = (UnionType) type;
 
@@ -2489,6 +2819,15 @@ public class TypeChecker {
 				return new ObjectType(newFields);
 			}
 			return ot;
+		}
+		if (type instanceof ListType) {
+			ListType lt = (ListType) type;
+			Type newElementType = substituteInType(lt.inner, tv, replacement);
+			
+			if (newElementType != lt.inner) {
+				return new ListType(newElementType);
+			}
+			return lt;
 		}
 		return type;
 	}
