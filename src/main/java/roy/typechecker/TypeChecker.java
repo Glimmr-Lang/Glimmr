@@ -6,6 +6,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.HashSet;
+import java.util.Set;
 import roy.ast.*;
 import roy.codegen.Codegen;
 import roy.codegen.jsast.JFunctionObject;
@@ -70,7 +72,6 @@ public class TypeChecker {
 		registerFunctionsAndTypes();
 	}
 
-	
 	public TypeChecker() {
 		this.typeEnv = new HashMap<>();
 		this.substitutions = new HashMap<>();
@@ -96,8 +97,8 @@ public class TypeChecker {
 		}
 
 		return Arrays.stream(list.toArray())
-			.map(Object::toString)
-			.collect(Collectors.joining("\n"));
+						.map(Object::toString)
+						.collect(Collectors.joining("\n"));
 	}
 
 	public List<Ast> getAliases() {
@@ -108,7 +109,6 @@ public class TypeChecker {
 
 		return list;
 	}
-
 
 	public String getModules() {
 		List<Ast> list = new ArrayList<>();
@@ -194,7 +194,6 @@ public class TypeChecker {
 			}
 		}
 
-
 		// Use the return type specified in the function
 		Type returnType = func.func.type != null ? func.func.type : freshTypeVar(func.func.name);
 
@@ -258,7 +257,7 @@ public class TypeChecker {
 			var name = kv.getKey();
 			var type = kv.getValue(); 
 			System.out.println("fn " + name + " : " + type);
-		}*/
+		} */
 		// Print results
 	}
 
@@ -317,6 +316,8 @@ public class TypeChecker {
 			return inferModuleAccess(ma);
 		} else if (node instanceof When when) {
 			return inferWhenExpression(when);
+		} else if (node instanceof Array array) {
+			return inferArray(array);
 		} else {
 			// For other node types, report an error
 			Token token = getTokenFromAst(node);
@@ -324,6 +325,46 @@ public class TypeChecker {
 			System.exit(0);
 			return null;
 		}
+	}
+
+	private CheckedNode inferArray(Array array) {
+		// If the array is empty, we can't infer its type, so use a fresh type variable
+		if (array.elements.isEmpty()) {
+			return new CheckedNode(new ListType(freshTypeVar(array.start)), array);
+		}
+
+		// Infer types for all elements in the array
+		List<Type> elementTypes = new ArrayList<>();
+		for (Ast element : array.elements) {
+			CheckedNode checkedElement = infer(element);
+			elementTypes.add(checkedElement.type);
+		}
+
+		// Check if all elements have the same type
+		Type firstType = elementTypes.get(0);
+		boolean allSameType = true;
+
+		for (int i = 1; i < elementTypes.size(); i++) {
+			try {
+				unify(firstType, elementTypes.get(i), array.elements.get(i));
+			} catch (TypeMismatchError e) {
+				allSameType = false;
+				break;
+			}
+		}
+
+		// If all elements have the same type, use that type
+		if (allSameType) {
+			return new CheckedNode(new ListType(firstType), array);
+		}
+
+		// Otherwise, create a union type from all unique element types
+		Set<Type> uniqueTypes = new HashSet<>(elementTypes);
+		List<Type> unionTypes = new ArrayList<>(uniqueTypes);
+
+		// Create a union type and return an array of that union type
+		UnionType unionType = new UnionType(unionTypes);
+		return new CheckedNode(new ListType(unionType), array);
 	}
 
 	private CheckedNode inferModuleAccess(ModuleAccess ma) {
@@ -390,7 +431,7 @@ public class TypeChecker {
 
 	private boolean hasExplicitType(Identifier id) {
 		String name = id.value.text;
-		
+
 		// Check if it's in the local symbol table with a non-TypeVariable type
 		if (localSymbolTable.containsKey(name)) {
 			Type type = localSymbolTable.get(name);
@@ -398,7 +439,7 @@ public class TypeChecker {
 				return true;
 			}
 		}
-		
+
 		// Check if it's in the type environment with a non-TypeVariable type
 		if (typeEnv.containsKey(name)) {
 			Type type = typeEnv.get(name);
@@ -406,7 +447,7 @@ public class TypeChecker {
 				return true;
 			}
 		}
-		
+
 		// For function parameters, we need to check if they have type annotations
 		// Look through function arguments to see if this identifier has an explicit type
 		for (var funcEntry : functionTable.entrySet()) {
@@ -417,7 +458,7 @@ public class TypeChecker {
 				}
 			}
 		}
-		
+
 		return false;
 	}
 
@@ -425,27 +466,27 @@ public class TypeChecker {
 		// First, infer the type of the match expression
 		CheckedNode matchChecked = infer(when.match);
 		Type matchType = matchChecked.type;
-		
+
 		// Check if the match expression has an explicit type annotation
 		boolean hasExplicitType = false;
-		
+
 		// If matching against a function parameter, check if it has an explicit type
 		if (when.match instanceof Identifier id) {
 			hasExplicitType = hasExplicitType(id);
 		}
-		
+
 		// Process each case pattern and body
 		List<Type> patternTypes = new ArrayList<>();
 		List<Type> bodyTypes = new ArrayList<>();
 		List<BindPattern> bindPatterns = new ArrayList<>();
 		Map<String, Type> savedLocalSymbols = new HashMap<>(localSymbolTable);
-		
+
 		// First pass - collect all pattern types and identify bind patterns
 		for (MatchCase casse : when.cases) {
 			// Infer pattern type and add to pattern types list
 			Type patternType = inferPatternType(casse.pattern, matchType);
 			patternTypes.add(patternType);
-			
+
 			// If match expression has explicit type, verify pattern compatibility
 			if (hasExplicitType) {
 				try {
@@ -454,17 +495,17 @@ public class TypeChecker {
 					// For explicit types, report an error when patterns don't match
 					Token token = getTokenFromAst(casse.pattern);
 					Errors.reportTypeCheckError(token,
-						"Pattern of type " + patternType + " is not compatible with match expression of type " + matchType);
+									"Pattern of type " + patternType + " is not compatible with match expression of type " + matchType);
 					System.exit(0);
 				}
 			}
-			
+
 			// Keep track of bind patterns for later unification
 			if (casse.pattern instanceof BindPattern) {
 				bindPatterns.add((BindPattern) casse.pattern);
 			}
 		}
-		
+
 		// Identify concrete types among the patterns (non-TypeVariable types)
 		List<Type> concreteTypes = new ArrayList<>();
 		for (Type type : patternTypes) {
@@ -472,17 +513,17 @@ public class TypeChecker {
 				concreteTypes.add(type);
 			}
 		}
-		
+
 		// Try to unify bind pattern variables with concrete types if possible
 		if (!concreteTypes.isEmpty() && !bindPatterns.isEmpty()) {
-			Type concreteUnion = concreteTypes.size() == 1 ? 
-				concreteTypes.get(0) : new UnionType(concreteTypes);
-			
+			Type concreteUnion = concreteTypes.size() == 1
+							? concreteTypes.get(0) : new UnionType(concreteTypes);
+
 			for (BindPattern bindPattern : bindPatterns) {
 				String varName = bindPattern.name.value.text;
 				if (localSymbolTable.containsKey(varName)) {
 					Type varType = localSymbolTable.get(varName);
-					
+
 					// Try to unify the variable with the concrete type(s)
 					try {
 						if (varType instanceof TypeVariable) {
@@ -495,13 +536,13 @@ public class TypeChecker {
 				}
 			}
 		}
-		
+
 		// Second pass - infer body types after binding pattern unification
 		// and ensure pattern bindings are consistent with match type
 		for (MatchCase casse : when.cases) {
 			// Make sure pattern types are unified with match type
 			Type patternType = inferPatternType(casse.pattern, matchType);
-			
+
 			// Ensure bound variables in patterns are properly unified with the match type
 			if (casse.pattern instanceof BindPattern bindPattern) {
 				String varName = bindPattern.name.value.text;
@@ -521,25 +562,25 @@ public class TypeChecker {
 					}
 				}
 			}
-			
+
 			// Now infer the body type with the updated symbol table
 			CheckedNode bodyChecked = infer(casse.body);
-			
+
 			// Apply substitutions to get most concrete type
 			Type bodyType = applySubstitutions(bodyChecked.type);
 			bodyTypes.add(bodyType);
 		}
-		
+
 		// Restore original local symbol table
 		localSymbolTable.clear();
 		localSymbolTable.putAll(savedLocalSymbols);
-		
+
 		// Handle else case if present
 		if (when._else != null) {
 			CheckedNode elseChecked = infer(when._else);
 			bodyTypes.add(elseChecked.type);
 		}
-		
+
 		// For explicit types, use the match type directly
 		if (hasExplicitType) {
 			matchType = applySubstitutions(matchType);
@@ -555,7 +596,7 @@ public class TypeChecker {
 						break;
 					}
 				}
-				
+
 				if (!allSamePatternType) {
 					// Different pattern types, create a union
 					matchUnionType = new UnionType(patternTypes);
@@ -569,7 +610,7 @@ public class TypeChecker {
 				// No patterns (shouldn't happen)
 				matchUnionType = matchType;
 			}
-			
+
 			// Try to unify the match expression with the union of pattern types
 			try {
 				unify(matchType, matchUnionType, when.match);
@@ -581,10 +622,10 @@ public class TypeChecker {
 				matchType = matchUnionType;
 			}
 		}
-		
+
 		// Apply substitutions to get the most specific match type
 		matchType = applySubstitutions(matchType);
-		
+
 		// Now look at the body types and replace any type variables that should be the match type
 		// This handles cases like "is b -> b" where b should be the match type
 		for (int i = 0; i < bodyTypes.size(); i++) {
@@ -601,7 +642,7 @@ public class TypeChecker {
 				}
 			}
 		}
-		
+
 		// Determine the output type (union of all body types or single type if all the same)
 		Type outputType;
 		if (bodyTypes.size() > 1) {
@@ -614,7 +655,7 @@ public class TypeChecker {
 					break;
 				}
 			}
-			
+
 			if (allSameBodyType) {
 				outputType = firstBodyType;
 			} else {
@@ -626,7 +667,7 @@ public class TypeChecker {
 			// No body types (shouldn't happen)
 			outputType = new TypeVariable(getTokenFromAst(when));
 		}
-		
+
 		return new CheckedNode(outputType, when);
 	}
 
@@ -640,14 +681,14 @@ public class TypeChecker {
 		} else if (pattern instanceof BindPattern bindPattern) {
 			// Check if we're matching against an explicitly typed value
 			boolean isExplicitMatchType = !(matchType instanceof TypeVariable);
-			
+
 			// Bind pattern creates a variable of the match type
 			String name = bindPattern.name.value.text;
-			
+
 			// Check if we already have a binding for this name
 			if (localSymbolTable.containsKey(name)) {
 				Type existingType = localSymbolTable.get(name);
-				
+
 				// If matching against a concrete type, use that type
 				if (isExplicitMatchType) {
 					// For explicit types, try to unify with existing type
@@ -658,8 +699,8 @@ public class TypeChecker {
 							return matchType;
 						} catch (Exception e) {
 							// If unification fails, error if matching against explicit type
-							Errors.reportTypeCheckError(bindPattern.name.value, 
-								"Cannot match binding pattern of type " + existingType + " with expression of type " + matchType);
+							Errors.reportTypeCheckError(bindPattern.name.value,
+											"Cannot match binding pattern of type " + existingType + " with expression of type " + matchType);
 							System.exit(0);
 						}
 					}
@@ -668,12 +709,12 @@ public class TypeChecker {
 						unify(existingType, matchType, bindPattern);
 						return existingType;
 					} catch (TypeMismatchError e) {
-						Errors.reportTypeCheckError(bindPattern.name.value, 
-							"Cannot match binding pattern of type " + existingType + " with expression of type " + matchType);
+						Errors.reportTypeCheckError(bindPattern.name.value,
+										"Cannot match binding pattern of type " + existingType + " with expression of type " + matchType);
 						System.exit(0);
 					}
 				}
-				
+
 				// If the existing type is a type variable and match type is concrete, use match type
 				if (existingType instanceof TypeVariable && !isExplicitMatchType) {
 					try {
@@ -687,12 +728,12 @@ public class TypeChecker {
 				}
 				return existingType;
 			}
-			
+
 			// Otherwise, create a new binding
 			// Use the match type directly if it's concrete, otherwise create a fresh type var
-			Type bindType = matchType instanceof TypeVariable ? 
-				freshTypeVar(bindPattern.name.value) : matchType;
-			
+			Type bindType = matchType instanceof TypeVariable
+							? freshTypeVar(bindPattern.name.value) : matchType;
+
 			// Add the binding to local symbol table
 			localSymbolTable.put(name, bindType);
 			return bindType;
@@ -700,7 +741,7 @@ public class TypeChecker {
 			// For literal patterns, infer the type of the expression
 			CheckedNode exprChecked = infer(exprPattern.expr);
 			Type patternType = exprChecked.type;
-			
+
 			// If we're matching against a concrete type, enforce compatibility
 			if (!(matchType instanceof TypeVariable)) {
 				try {
@@ -708,11 +749,11 @@ public class TypeChecker {
 				} catch (TypeMismatchError e) {
 					// For explicit match types, this is an error
 					Errors.reportTypeCheckError(getTokenFromAst(exprPattern.expr),
-						"Pattern of type " + patternType + " is not compatible with match expression of type " + matchType);
+									"Pattern of type " + patternType + " is not compatible with match expression of type " + matchType);
 					System.exit(0);
 				}
 			}
-			
+
 			// Return the concrete type of the expression pattern
 			return patternType;
 		} else if (pattern instanceof ConsPattern consPattern) {
@@ -725,7 +766,7 @@ public class TypeChecker {
 				// If matching against explicit non-list type, error
 				if (!(matchType instanceof TypeVariable)) {
 					Errors.reportTypeCheckError(getTokenFromAst(listPattern),
-						"Cannot match list pattern against non-list type " + matchType);
+									"Cannot match list pattern against non-list type " + matchType);
 					System.exit(0);
 				}
 				// If inferred, this pattern won't match
@@ -738,7 +779,7 @@ public class TypeChecker {
 				// If matching against explicit non-tuple type, error
 				if (!(matchType instanceof TypeVariable)) {
 					Errors.reportTypeCheckError(getTokenFromAst(tuplePattern),
-						"Cannot match tuple pattern against non-tuple type " + matchType);
+									"Cannot match tuple pattern against non-tuple type " + matchType);
 					System.exit(0);
 				}
 				// If inferred, this pattern won't match
@@ -751,7 +792,7 @@ public class TypeChecker {
 				// If matching against explicit non-object type, error
 				if (!(matchType instanceof TypeVariable)) {
 					Errors.reportTypeCheckError(getTokenFromAst(objPattern),
-						"Cannot match object pattern against non-object type " + matchType);
+									"Cannot match object pattern against non-object type " + matchType);
 					System.exit(0);
 				}
 				// If inferred, this pattern won't match
@@ -759,7 +800,7 @@ public class TypeChecker {
 			}
 			return matchType;
 		}
-		
+
 		// Default case
 		return matchType;
 	}
@@ -800,9 +841,9 @@ public class TypeChecker {
 				return new CheckedNode(resultType, fieldAccess);
 			} catch (TypeMismatchError e) {
 				Errors.reportTypeCheckError(
-					fieldAccess.field.value,
-					"Cannot access field '" + fieldAccess.field.value.text
-					+ "' on expression of type " + expr_type
+								fieldAccess.field.value,
+								"Cannot access field '" + fieldAccess.field.value.text
+								+ "' on expression of type " + expr_type
 				);
 				System.exit(0);
 				return null;
@@ -919,17 +960,27 @@ public class TypeChecker {
 			return first.value;
 		} else if (ast instanceof MatchCase casse) {
 			return getTokenFromAst(casse.pattern);
+		} else if (ast instanceof Array array) {
+			return array.start;
 		}
-
 		// Fallback in case we can't extract a token
 		return new Token(TokenKind.ERR, "unknown");
 	}
 
 	private CheckedNode inferTuple(Tuple tuple) {
-
 		List<Type> types = new ArrayList<>();
 		for (var node : tuple.values) {
 			types.add(infer(node).type);
+		}
+
+		var name = "Tuple";
+		if (sumTypes.containsKey(name)) {
+			var t = sumTypes.get(name);
+			t.arity = Math.max(types.size(), t.arity);
+			sumTypes.put(name, t);
+		} else {
+			var t = new JFunctionObject(name, types.size());
+			sumTypes.put(name, t);
 		}
 
 		return new CheckedNode(new TupleType(types), tuple);
@@ -1006,8 +1057,8 @@ public class TypeChecker {
 					// and constrain them too
 					for (Map.Entry<TypeVariable, Type> entry : substitutions.entrySet()) {
 						if (entry.getValue() instanceof TypeVariable
-							&& typeEnv.containsValue(entry.getValue())
-							&& typeEnv.get(varName) == entry.getValue()) {
+										&& typeEnv.containsValue(entry.getValue())
+										&& typeEnv.get(varName) == entry.getValue()) {
 							substitutions.put(entry.getKey(), stringType);
 						}
 					}
@@ -1019,8 +1070,8 @@ public class TypeChecker {
 					typeEnv.put(varName, stringType);
 					for (Map.Entry<TypeVariable, Type> entry : substitutions.entrySet()) {
 						if (entry.getValue() instanceof TypeVariable
-							&& typeEnv.containsValue(entry.getValue())
-							&& typeEnv.get(varName) == entry.getValue()) {
+										&& typeEnv.containsValue(entry.getValue())
+										&& typeEnv.get(varName) == entry.getValue()) {
 							substitutions.put(entry.getKey(), stringType);
 						}
 					}
@@ -1132,9 +1183,9 @@ public class TypeChecker {
 	// Helper to check if a type is a primitive type
 	private boolean isPrimitiveType(Type type) {
 		return type instanceof NumberType
-			|| type instanceof StringType
-			|| type instanceof BooleanType
-			|| type instanceof UnitType;
+						|| type instanceof StringType
+						|| type instanceof BooleanType
+						|| type instanceof UnitType;
 	}
 
 	private CheckedNode inferFunction(RFunction func) {
@@ -1191,7 +1242,7 @@ public class TypeChecker {
 				var fx = (RFunction) f;
 				names.add(fx.name.text);
 				functionTable.put(fx.name.text, fx);
-				
+
 				// Register a skeleton function type for each where function
 				String whereFuncName = fx.name.text;
 				List<Type> whereArgTypes = new ArrayList<>();
@@ -1203,7 +1254,7 @@ public class TypeChecker {
 				functionTypes.put(whereFuncName, new FunctionType(whereArgTypes, whereReturnType));
 				checkedFunctions.put(whereFuncName, false);
 			}
-			
+
 			// Then, infer types for each where function
 			for (var f : func.where) {
 				var fx = (RFunction) f;
@@ -1213,19 +1264,19 @@ public class TypeChecker {
 
 		// Special handling for when expressions in function bodies
 		boolean hasWhenExpression = func.body instanceof When;
-		
+
 		// Infer the type of the function body
 		CheckedNode bodyChecked = infer(func.body);
-		
+
 		// Process any recursive calls or other type constraints
 		findAndEnforceTypeConstraints(func.body);
-		
+
 		// Apply substitutions to all types
 		applyAllSubstitutions();
-		
+
 		// Handle the function's return type, which may depend on its body
 		Type returnType = handleFunctionReturnType(func, bodyChecked, argTypes);
-		
+
 		// Detect operations like string concatenation in the function body
 		detectAndHandleOperations(func.body, argTypes);
 
@@ -1235,7 +1286,7 @@ public class TypeChecker {
 		names.forEach((name) -> checkedFunctions.remove(name));
 		names.forEach((name) -> functionTable.remove(name));
 		names.forEach((name) -> functionTypes.remove(name));
-		
+
 		// Update all argument types with their most specialized versions
 		for (int i = 0; i < argTypes.size(); i++) {
 			argTypes.set(i, applySubstitutions(argTypes.get(i)));
@@ -1254,21 +1305,21 @@ public class TypeChecker {
 						break;
 					}
 				}
-				
+
 				if (paramIndex >= 0) {
 					// Get the most refined match type after all inferences
 					CheckedNode matchChecked = infer(when.match);
 					Type matchType = applySubstitutions(matchChecked.type);
-					
+
 					// Update the argument type
 					argTypes.set(paramIndex, matchType);
-					
+
 					// Also check for binding patterns returning the same variable
 					for (MatchCase casse : when.cases) {
-						if (casse.pattern instanceof BindPattern && 
-							casse.body instanceof Identifier &&
-							((Identifier) casse.body).value.text.equals(
-								((BindPattern) casse.pattern).name.value.text)) {
+						if (casse.pattern instanceof BindPattern
+										&& casse.body instanceof Identifier
+										&& ((Identifier) casse.body).value.text.equals(
+														((BindPattern) casse.pattern).name.value.text)) {
 							// This is a case like "is b -> b", so ensure return type includes match type
 							if (returnType instanceof UnionType) {
 								UnionType ut = (UnionType) returnType;
@@ -1297,7 +1348,7 @@ public class TypeChecker {
 
 		// Apply substitutions to get the final types
 		Type substitutedReturnType = applySubstitutions(returnType);
-		
+
 		// Create the final function type
 		FunctionType finalFuncType = new FunctionType(argTypes, substitutedReturnType);
 
@@ -1306,14 +1357,14 @@ public class TypeChecker {
 
 		// Update function type in our registry
 		functionTypes.put(funcName, finalFuncType);
-		
+
 		// Restore the previous environment
 		if (!isCalledFromProcess) {
 			typeEnv = savedEnv;
 			substitutions = savedSubstitutions;
 			localSymbolTable = savedLocalSymbolTable;
 		}
-		
+
 		return new CheckedNode(finalFuncType, func);
 	}
 
@@ -1384,7 +1435,7 @@ public class TypeChecker {
 			When when = (When) func.body;
 			CheckedNode matchChecked = infer(when.match);
 			Type matchType = applySubstitutions(matchChecked.type);
-			
+
 			// Collect concrete pattern types
 			List<Type> concretePatternTypes = new ArrayList<>();
 			for (MatchCase casse : when.cases) {
@@ -1396,12 +1447,12 @@ public class TypeChecker {
 					}
 				}
 			}
-			
+
 			// If we have concrete pattern types, try to constrain the match expression
 			if (!concretePatternTypes.isEmpty()) {
-				Type concreteType = concretePatternTypes.size() == 1 ? 
-					concretePatternTypes.get(0) : new UnionType(concretePatternTypes);
-					
+				Type concreteType = concretePatternTypes.size() == 1
+								? concretePatternTypes.get(0) : new UnionType(concretePatternTypes);
+
 				// If the match expression is a parameter, update its type to the concrete type
 				if (when.match instanceof Identifier identifier) {
 					String paramName = identifier.value.text;
@@ -1557,7 +1608,7 @@ public class TypeChecker {
 			if (argTypes.get(i) instanceof TypeVariable) {
 				for (Identifier id : identifiers) {
 					if (typeEnv.containsKey(id.value.text)
-						&& typeEnv.get(id.value.text).equals(argTypes.get(i))) {
+									&& typeEnv.get(id.value.text).equals(argTypes.get(i))) {
 						argTypes.set(i, concreteType);
 					}
 				}
@@ -1672,8 +1723,8 @@ public class TypeChecker {
 	private CheckedNode inferCall(Call call) {
 		// IMPORTANT - Do not modify this code block
 		if (call.expr instanceof Identifier id
-			&& !functionTable.containsKey(id.value.text)
-			&& Character.isUpperCase(id.value.text.charAt(0))) {
+						&& !functionTable.containsKey(id.value.text)
+						&& Character.isUpperCase(id.value.text.charAt(0))) {
 			// This is a variant constructor application
 			String name = id.value.text;
 			List<Type> argTypes = new ArrayList<>();
@@ -1710,7 +1761,7 @@ public class TypeChecker {
 				funcType = ft.type;
 			} else {
 				Errors.reportTypeCheckError(getTokenFromAst(call.expr),
-					"Cannot call a non-function type: " + funcType);
+								"Cannot call a non-function type: " + funcType);
 				System.exit(0);
 				return null;
 			}
@@ -1723,7 +1774,7 @@ public class TypeChecker {
 		if (call.params.size() == 0 && ft.args.size() == 0) {
 			return new CheckedNode(ft.type, call);
 		}
-		
+
 		// Handle function call with Unit argument to a no-argument function
 		if (call.params.size() == 1 && ft.args.size() == 0) {
 		}
@@ -1740,7 +1791,7 @@ public class TypeChecker {
 					return inferCall(new Call(funcExpr, remainingArgs));
 				} else {
 					Errors.reportTypeCheckError(getTokenFromAst(call.expr),
-						"Too many arguments provided to function call");
+									"Too many arguments provided to function call");
 					System.exit(0);
 					return null;
 				}
@@ -1756,7 +1807,7 @@ public class TypeChecker {
 				applyAllSubstitutions();
 			} catch (TypeMismatchError e) {
 				Errors.reportTypeCheckError(getTokenFromAst(argAst),
-					"Type mismatch in function call: " + e.getMessage());
+								"Type mismatch in function call: " + e.getMessage());
 				System.exit(0);
 			}
 
@@ -1858,11 +1909,11 @@ public class TypeChecker {
 
 		// Special case: NamedType can't unify with concrete types
 		if ((t1 instanceof NamedType && isPrimitiveType(t2))
-			|| (t2 instanceof NamedType && isPrimitiveType(t1))) {
+						|| (t2 instanceof NamedType && isPrimitiveType(t1))) {
 			throw new TypeMismatchError("Named type ("
-				+ (t1 instanceof NamedType ? t1 : t2)
-				+ ") cannot be unified with primitive type ("
-				+ (isPrimitiveType(t1) ? t1 : t2) + ")");
+							+ (t1 instanceof NamedType ? t1 : t2)
+							+ ") cannot be unified with primitive type ("
+							+ (isPrimitiveType(t1) ? t1 : t2) + ")");
 		}
 
 		// Handle TypeVariable with NamedType (only TypeVariable can be substituted)
@@ -2101,7 +2152,7 @@ public class TypeChecker {
 					break;
 				}
 			}
-			
+
 			// If we found a concrete type, use it instead of the union
 			if (concreteType != null && unionType.types.size() == 2) {
 				// Check if the union is just (concrete | typevar)
@@ -2112,7 +2163,7 @@ public class TypeChecker {
 						break;
 					}
 				}
-				
+
 				// If the union is just one concrete type and type variables, use the concrete type
 				if (onlyOneTypeVar) {
 					type = concreteType;
@@ -2130,14 +2181,14 @@ public class TypeChecker {
 		for (Map.Entry<TypeVariable, Type> entry : substitutions.entrySet()) {
 			if (!entry.getKey().equals(tv)) {
 				substitutions.put(entry.getKey(),
-					substituteInType(entry.getValue(), tv, substitutedType));
+								substituteInType(entry.getValue(), tv, substitutedType));
 			}
 		}
 
 		// Update the environment
 		for (Map.Entry<String, Type> entry : typeEnv.entrySet()) {
 			typeEnv.put(entry.getKey(),
-				substituteInType(entry.getValue(), tv, substitutedType));
+							substituteInType(entry.getValue(), tv, substitutedType));
 		}
 	}
 
@@ -2399,7 +2450,7 @@ public class TypeChecker {
 	// Also need to add support for simple variant constructors used directly
 	private Type inferVariantReturn(Type type, List<Type> argTypes) {
 		if (type instanceof TypeVariable t && ((TypeVariable) type).name.text.length() > 0
-			&& Character.isUpperCase(((TypeVariable) type).name.text.charAt(0))) {
+						&& Character.isUpperCase(((TypeVariable) type).name.text.charAt(0))) {
 
 			return new AppType(t.name, argTypes);
 
@@ -2419,7 +2470,7 @@ public class TypeChecker {
 			applyAllSubstitutions();
 		} catch (TypeMismatchError e) {
 			Errors.reportTypeCheckError(getTokenFromAst(ifElse.cond),
-				"Condition of if-else must be a boolean, but got " + condType);
+							"Condition of if-else must be a boolean, but got " + condType);
 			System.exit(0);
 		}
 
@@ -2483,7 +2534,7 @@ public class TypeChecker {
 			// Propagate to all related type variables
 			for (Map.Entry<TypeVariable, Type> entry : substitutions.entrySet()) {
 				if (entry.getValue() instanceof TypeVariable
-					&& entry.getValue().equals(tv)) {
+								&& entry.getValue().equals(tv)) {
 					substitutions.put(entry.getKey(), stringType);
 				}
 			}
