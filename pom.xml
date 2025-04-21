@@ -55,6 +55,54 @@
 	</build>
 
 
+
+
+	<profiles>
+		<profile>
+			<id>native</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.graalvm.buildtools</groupId>
+						<artifactId>native-maven-plugin</artifactId>
+						<version>0.10.0</version>
+						<extensions>true</extensions>
+						<executions>
+							<execution>
+								<id>build-native</id>
+								<goals>
+									<goal>compile-no-fork</goal>
+								</goals>
+								<phase>package</phase>
+							</execution>
+						</executions>
+
+            <configuration>
+              <mainClass>roy.Glimmr</mainClass>
+              <imageName>glimr</imageName>
+              <verbose>true</verbose>
+              <buildArgs>
+                <buildArg>-O3</buildArg> <!-- enables additional compiler optimizations -->
+              </buildArgs>
+              <jvmArgs>
+                <arg>--sun-misc-unsafe-memory-access=allow</arg>
+                <arg>--enable-native-access=ALL-UNNAMED</arg>
+              </jvmArgs>
+            </configuration>
+
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
+
+
+
+
+
+
+
 	<dependencies>
 
 		<dependency>
