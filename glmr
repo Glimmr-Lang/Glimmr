@@ -1,0 +1,6 @@
+#!/usr/bin/bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNTIME_ARGS="--sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED" 
+
+java $RUNTIME_ARGS -jar "$SCRIPT_DIR/target/Glimmr-1.0-SNAPSHOT-jar-with-dependencies.jar" "$@"
