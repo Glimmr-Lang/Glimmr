@@ -1750,9 +1750,18 @@ public class TypeChecker {
 			return new CheckedNode(new AppType(id.value, argTypes), call);
 		}
 
+		// Store the original substitutions map to restore it after call processing
+		Map<TypeVariable, Type> originalSubstitutions = new HashMap<>(substitutions);
+		
 		// Regular function call processing
 		CheckedNode funcChecked = infer(call.expr);
 		Type funcType = funcChecked.type;
+		
+		// Make a deep copy of the function type to prevent modifying the original
+		Type originalFuncType = funcType;
+		if (funcType instanceof FunctionType) {
+			funcType = ((FunctionType) funcType).clone();
+		}
 
 		// Check that the function type is a function
 		if (!(funcType instanceof FunctionType)) {
@@ -1772,6 +1781,8 @@ public class TypeChecker {
 
 		// Handle no-argument function calls with empty parentheses
 		if (call.params.size() == 0 && ft.args.size() == 0) {
+			// Restore original substitutions
+			substitutions = originalSubstitutions;
 			return new CheckedNode(ft.type, call);
 		}
 
@@ -1788,8 +1799,13 @@ public class TypeChecker {
 					// Instead of error, we'll create a new call with remaining arguments
 					Ast funcExpr = new Call(call.expr, call.params.subList(0, i));
 					List<Ast> remainingArgs = call.params.subList(i, call.params.size());
+					
+					// Restore original substitutions
+					substitutions = originalSubstitutions;
 					return inferCall(new Call(funcExpr, remainingArgs));
 				} else {
+					// Restore original substitutions
+					substitutions = originalSubstitutions;
 					Errors.reportTypeCheckError(getTokenFromAst(call.expr),
 									"Too many arguments provided to function call");
 					System.exit(0);
@@ -1804,8 +1820,11 @@ public class TypeChecker {
 
 			try {
 				unify(ft.args.get(0), argType, argAst);
-				applyAllSubstitutions();
+				// We only apply substitutions locally, to the copied function type
+				// Don't call applyAllSubstitutions() here, as it would affect the global state
 			} catch (TypeMismatchError e) {
+				// Restore original substitutions
+				substitutions = originalSubstitutions;
 				Errors.reportTypeCheckError(getTokenFromAst(argAst),
 								"Type mismatch in function call: " + e.getMessage());
 				System.exit(0);
@@ -1820,8 +1839,35 @@ public class TypeChecker {
 			}
 		}
 
-		// Apply substitutions to the result
+		// Apply substitutions but only to our result type, not to the entire type environment
 		resultType = applySubstitutions(resultType);
+		
+		// Save any new substitutions that should be kept (exclude function type variables)
+		Map<TypeVariable, Type> newSubstitutions = new HashMap<>();
+		for (Map.Entry<TypeVariable, Type> entry : substitutions.entrySet()) {
+			if (!originalSubstitutions.containsKey(entry.getKey())) {
+				// Only keep substitutions for type variables not related to function parameters
+				boolean isFunctionTypeVar = false;
+				if (originalFuncType instanceof FunctionType) {
+					FunctionType ofType = (FunctionType) originalFuncType;
+					for (Type argType : ofType.args) {
+						if (argType instanceof TypeVariable && 
+								((TypeVariable) argType).name.text.equals(entry.getKey().name.text)) {
+							isFunctionTypeVar = true;
+							break;
+						}
+					}
+				}
+				if (!isFunctionTypeVar) {
+					newSubstitutions.put(entry.getKey(), entry.getValue());
+				}
+			}
+		}
+		
+		// Restore original substitutions, but add any new ones that should be kept
+		substitutions = originalSubstitutions;
+		substitutions.putAll(newSubstitutions);
+		
 		return new CheckedNode(resultType, call);
 	}
 
