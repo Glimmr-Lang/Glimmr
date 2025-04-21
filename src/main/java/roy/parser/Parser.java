@@ -11,6 +11,7 @@ import java.util.function.Function;
 import roy.ast.AnnotatedFunction;
 import roy.ast.AnyPattern;
 import roy.ast.Arg;
+import roy.ast.Array;
 import roy.ast.Ast;
 import roy.ast.BinOp;
 import roy.ast.BindPattern;
@@ -1335,9 +1336,32 @@ public class Parser {
 		if (match(TokenKind.LPAREN)) {
 			return groupOrTuple();
 		}
-		return parsePrimary();
+		return arrayExpression();
 	}
 
+	private Ast arrayExpression() {
+		if (match(TokenKind.LBRACKET)) {
+			return arrayExpr();
+		}
+		return parsePrimary();
+	}
+	
+	private Ast arrayExpr() {
+		var top = peek(0);
+		next();
+		List<Ast> elements = new ArrayList<>();
+		while (!match(TokenKind.RBRACKET)) {
+			elements.add(expression());
+			if (match(TokenKind.RBRACKET)) {
+				break;
+			} else {
+				expect(TokenKind.COMMA, "Expected a comma after the expression in array");
+			}
+		}
+		next();
+		return new Array(elements, top);
+	}
+	
 	private Ast ifStatement() {
 		next();
 		var cond = expression();
