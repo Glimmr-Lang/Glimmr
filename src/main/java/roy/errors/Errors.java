@@ -17,6 +17,7 @@ import roy.tokens.Token;
  */
 public class Errors {
 	public static String codeString = "";
+	public static boolean isrepl = false;
 	public static void reportSyntaxError(Token token, String message) {
 		reportError(token, "Syntax Error", message);
 	}
@@ -47,6 +48,11 @@ public class Errors {
 			line_fmt = String.format(" %d │", span.line + 1);
 			System.out.println(line_fmt);
 		}
+
+		if (isrepl){
+			throw new ReplErrorException();
+		}
+		
 		System.exit(1);
 	}
 
