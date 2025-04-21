@@ -252,11 +252,13 @@ public class TypeChecker {
 			}
 		}
 
+		/*
 		for (var kv: functionTypes.entrySet()) {
 			var name = kv.getKey();
 			var type = kv.getValue(); 
 			System.out.println("fn " + name + " : " + type);
 		} 
+		*/
 		// Print results
 	}
 
@@ -480,8 +482,16 @@ public class TypeChecker {
 		List<BindPattern> bindPatterns = new ArrayList<>();
 		Map<String, Type> savedLocalSymbols = new HashMap<>(localSymbolTable);
 
+		// Keep track of tuple patterns that might indicate the structure of the match type
+		List<TuplePattern> tuplePatterns = new ArrayList<>();
+
 		// First pass - collect all pattern types and identify bind patterns
 		for (MatchCase casse : when.cases) {
+			// Record tuple patterns for later structure analysis
+			if (casse.pattern instanceof TuplePattern) {
+				tuplePatterns.add((TuplePattern) casse.pattern);
+			}
+			
 			// Infer pattern type and add to pattern types list
 			Type patternType = inferPatternType(casse.pattern, matchType);
 			patternTypes.add(patternType);
@@ -511,6 +521,30 @@ public class TypeChecker {
 		// Apply substitutions again after all patterns have been processed
 		applyAllSubstitutions();
 		matchType = applySubstitutions(matchType);
+
+		// If matchType is still a type variable and we have tuple patterns,
+		// try to infer a tuple structure from the most specific tuple pattern
+		if (matchType instanceof TypeVariable && !tuplePatterns.isEmpty()) {
+			// Find the most specific tuple pattern (one with the most nested structure)
+			TuplePattern mostSpecificPattern = tuplePatterns.get(0);
+			for (int i = 1; i < tuplePatterns.size(); i++) {
+				if (hasMoreNestedStructure(tuplePatterns.get(i), mostSpecificPattern)) {
+					mostSpecificPattern = tuplePatterns.get(i);
+				}
+			}
+			
+			// Infer a tuple type from the most specific pattern
+			Type inferredTupleType = inferPatternType(mostSpecificPattern, matchType);
+			
+			// Try to unify the match type with this inferred tuple type
+			try {
+				unify(matchType, inferredTupleType, mostSpecificPattern);
+				applyAllSubstitutions();
+				matchType = applySubstitutions(matchType);
+			} catch (TypeMismatchError e) {
+				// If unification fails, continue with the variable type
+			}
+		}
 
 		// Collect concrete types from numeric literals and other concrete patterns
 		List<Type> concreteTypes = new ArrayList<>();
@@ -704,6 +738,42 @@ public class TypeChecker {
 		return new CheckedNode(outputType, when);
 	}
 
+	// Helper method to determine if a tuple pattern has more nested structure than another
+	private boolean hasMoreNestedStructure(TuplePattern pattern1, TuplePattern pattern2) {
+		int nestedCount1 = 0;
+		int nestedCount2 = 0;
+		
+		// Count nested tuple patterns in pattern1
+		for (Pattern elem : pattern1.exprs) {
+			if (elem instanceof TuplePattern) {
+				nestedCount1++;
+				nestedCount1 += countNestedTuples((TuplePattern) elem);
+			}
+		}
+		
+		// Count nested tuple patterns in pattern2
+		for (Pattern elem : pattern2.exprs) {
+			if (elem instanceof TuplePattern) {
+				nestedCount2++;
+				nestedCount2 += countNestedTuples((TuplePattern) elem);
+			}
+		}
+		
+		return nestedCount1 > nestedCount2;
+	}
+	
+	// Helper method to count nested tuples recursively
+	private int countNestedTuples(TuplePattern pattern) {
+		int count = 0;
+		for (Pattern elem : pattern.exprs) {
+			if (elem instanceof TuplePattern) {
+				count++;
+				count += countNestedTuples((TuplePattern) elem);
+			}
+		}
+		return count;
+	}
+
 	// Helper method to collect concrete types from patterns
 	private void collectConcreteTypesFromPatterns(List<MatchCase> cases, List<Type> concreteTypes) {
 		for (MatchCase casse : cases) {
@@ -720,10 +790,11 @@ public class TypeChecker {
 				concreteTypes.add(new StringType());
 			}
 		} else if (pattern instanceof TuplePattern tuplePattern) {
-			// For tuples, recursively collect concrete types from elements
-			for (Pattern elementPattern : tuplePattern.exprs) {
-				collectConcreteTypesFromPattern(elementPattern, concreteTypes);
-			}
+			// For tuples with nested tuples, we should NOT add each element to the concreteTypes list
+			// as that would lead to flattening of nested structures
+			// Instead, we'll handle tuple structure matching in the inferPatternType method
+			
+			// Don't recursively add types from nested tuples to avoid flattening the structure
 		} else if (pattern instanceof ListPattern listPattern) {
 			// For lists, recursively collect concrete types from elements
 			for (Pattern elementPattern : listPattern.exprs) {
@@ -812,13 +883,17 @@ public class TypeChecker {
 					// Create a new tuple type for the nested tuple pattern
 					List<Type> nestedTypes = new ArrayList<>();
 					for (Pattern nestedElement : nestedTuplePattern.exprs) {
-						Type nestedType = freshTypeVar(getTokenFromAst(nestedElement));
-						if (nestedElement instanceof ExpressionPattern exprPattern && 
-							exprPattern.expr instanceof roy.ast.Number) {
-							nestedType = new NumberType();
-						} else if (nestedElement instanceof ExpressionPattern exprPattern && 
-							exprPattern.expr instanceof RString) {
-							nestedType = new StringType();
+						Type nestedType;
+						if (nestedElement instanceof ExpressionPattern nestedExpr) {
+							if (nestedExpr.expr instanceof roy.ast.Number) {
+								nestedType = new NumberType();
+							} else if (nestedExpr.expr instanceof RString) {
+								nestedType = new StringType();
+							} else {
+								nestedType = freshTypeVar(getTokenFromAst(nestedElement));
+							}
+						} else {
+							nestedType = freshTypeVar(getTokenFromAst(nestedElement));
 						}
 						nestedTypes.add(nestedType);
 					}
@@ -980,40 +1055,54 @@ public class TypeChecker {
 			if (matchType instanceof TypeVariable) {
 				List<Type> elementTypes = new ArrayList<>();
 				
-				// First determine proper types for each element
-				for (Pattern elementPattern : tuplePattern.exprs) {
-					// Default to a fresh type variable
-					Type elementType = freshTypeVar(getTokenFromAst(elementPattern));
+				// Process each element in the tuple pattern
+				for (int i = 0; i < tuplePattern.exprs.size(); i++) {
+					Pattern elementPattern = tuplePattern.exprs.get(i);
 					
-					// If this element is an expression pattern with a literal number, use NumberType
-					if (elementPattern instanceof ExpressionPattern exprPattern && 
-						exprPattern.expr instanceof roy.ast.Number) {
-						elementType = new NumberType();
+					// Handle different types of elements
+					if (elementPattern instanceof ExpressionPattern exprPattern) {
+						// Handle literal numbers and strings
+						if (exprPattern.expr instanceof roy.ast.Number) {
+							elementTypes.add(new NumberType());
+						} else if (exprPattern.expr instanceof RString) {
+							elementTypes.add(new StringType());
+						} else {
+							// For other expressions, infer type
+							Type elementType = freshTypeVar(getTokenFromAst(elementPattern));
+							Type inferredType = inferPatternType(elementPattern, elementType);
+							elementTypes.add(inferredType);
+						}
+					} else if (elementPattern instanceof TuplePattern nestedTuplePattern) {
+						// Create a nested tuple type for nested tuple patterns
+						List<Type> nestedTypes = new ArrayList<>();
+						for (Pattern nestedElem : nestedTuplePattern.exprs) {
+							if (nestedElem instanceof ExpressionPattern nestedExpr) {
+								if (nestedExpr.expr instanceof roy.ast.Number) {
+									nestedTypes.add(new NumberType());
+								} else if (nestedExpr.expr instanceof RString) {
+									nestedTypes.add(new StringType());
+								} else {
+									Type nestedType = freshTypeVar(getTokenFromAst(nestedElem));
+									nestedTypes.add(inferPatternType(nestedElem, nestedType));
+								}
+							} else {
+								Type nestedType = freshTypeVar(getTokenFromAst(nestedElem));
+								nestedTypes.add(inferPatternType(nestedElem, nestedType));
+							}
+						}
+						
+						// Create and add the nested tuple type
+						elementTypes.add(new TupleType(nestedTypes));
+					} else {
+						// For other patterns (like bind patterns), create a fresh type variable
+						Type elementType = freshTypeVar(getTokenFromAst(elementPattern));
+						Type inferredType = inferPatternType(elementPattern, elementType);
+						elementTypes.add(inferredType);
 					}
-					// If this element is an expression pattern with a string literal, use StringType
-					else if (elementPattern instanceof ExpressionPattern exprPattern && 
-						exprPattern.expr instanceof RString) {
-						elementType = new StringType();
-					}
-					// If this is a nested tuple pattern, handle it recursively
-					else if (elementPattern instanceof TuplePattern nestedTuplePattern) {
-						// Create a fresh type for the nested tuple and process it
-						Type nestedTupleType = freshTypeVar(getTokenFromAst(nestedTuplePattern));
-						elementType = inferPatternType(nestedTuplePattern, nestedTupleType);
-					}
-					// For other patterns, use the inferred type
-					else {
-						elementType = inferPatternType(elementPattern, elementType);
-					}
-					
-					// Add the element type to our list
-					elementTypes.add(elementType);
 				}
 				
-				// Create a tuple type with the inferred element types
+				// Create and return the tuple type for the whole pattern
 				TupleType tupleType = new TupleType(elementTypes);
-				
-				// Unify the match type with our constructed tuple type
 				try {
 					unify(matchType, tupleType, tuplePattern);
 					applyAllSubstitutions();
