@@ -1,5 +1,6 @@
 package roy.codegen;
 
+import roy.codegen.jsast.JArray;
 import roy.codegen.jsast.WhenExpression;
 import java.lang.invoke.CallSite;
 import java.util.ArrayList;
@@ -8,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.stream.Collectors;
 import roy.ast.AnnotatedFunction;
+import roy.ast.Array;
 import roy.ast.Ast;
 import roy.ast.BinOp;
 import roy.ast.Block;
@@ -24,6 +26,7 @@ import roy.ast.RClosure;
 import roy.ast.RFunction;
 import roy.ast.RObject;
 import roy.ast.RString;
+import roy.ast.Tuple;
 import roy.ast.TypeAlias;
 import roy.ast.Unit;
 import roy.ast.When;
@@ -47,6 +50,7 @@ import roy.codegen.jsast.StringLiteral;
 import roy.codegen.jsast.UnitLiteral;
 import roy.codegen.jsast.WhenCases;
 import roy.rt.It;
+import roy.tokens.Token;
 import roy.tokens.TokenKind;
 
 public class Codegen {
@@ -70,28 +74,25 @@ public class Codegen {
 		}
 
 		return Arrays.stream(stmts.toArray())
-			.map(Object::toString)
-			.collect(Collectors.joining("\n"));
+						.map(Object::toString)
+						.collect(Collectors.joining("\n"));
 	}
-
 
 	public String repl() {
 		List<CodegenAst> stmts = new ArrayList<>();
 		for (var node : nodes) {
 			if (node instanceof RFunction func) {
 				stmts.add(codegenFunction(func));
-			} else
-
-			if (node instanceof AnnotatedFunction afunc) {
+			} else if (node instanceof AnnotatedFunction afunc) {
 				stmts.add(codegenAnnotatedFunction(afunc));
-			} else if(!(node instanceof TypeAlias)) {
+			} else if (!(node instanceof TypeAlias)) {
 				stmts.add(codegenExpr(node));
 			}
 		}
 
 		return Arrays.stream(stmts.toArray())
-			.map(Object::toString)
-			.collect(Collectors.joining("\n"));
+						.map(Object::toString)
+						.collect(Collectors.joining("\n"));
 	}
 
 	private CodegenAst codegenAnnotatedFunction(AnnotatedFunction afunc) {
@@ -142,7 +143,7 @@ public class Codegen {
 			statements.add(fx);
 			statements.add(new JCall(new JIdentifier(name), new ArrayList<>()));
 			return new JStatementList(statements);
-		} 
+		}
 		return fx;
 	}
 
@@ -211,11 +212,37 @@ public class Codegen {
 			return codegenWhenExpression(when);
 		}
 
+		if (expr instanceof Array array) {
+			return codegenArray(array);
+		}
+
+		if (expr instanceof Tuple tuple) {
+			return codegenTuple(tuple);
+		}
+
 		It.todo(expr.getClass().getName());
 		return null;
 	}
 
-	private CodegenAst  codegenWhenExpression(When when) {
+	private CodegenAst codegenTuple(Tuple tuple) {
+		List<CodegenAst> params = new ArrayList<>();
+		var expr = codegenExpr(new Identifier(new Token(TokenKind.ID, "Tuple")));
+		for (var param : tuple.values) {
+			params.add(codegenExpr(param));
+		}
+		return new JObjInstance(expr.toString(), params);
+	}
+
+	private CodegenAst codegenArray(Array array) {
+		List<CodegenAst> nodes = new ArrayList<>();
+		for (var node : array.elements) {
+			nodes.add(codegenExpr(node));
+		}
+
+		return new JArray(nodes);
+	}
+
+	private CodegenAst codegenWhenExpression(When when) {
 		var cond = codegenExpr(when.match);
 		List<WhenCases> cases = new ArrayList<>();
 		for (var match : when.cases) {
@@ -230,7 +257,7 @@ public class Codegen {
 		}
 		return new WhenExpression(cond, cases, _elze);
 	}
-	
+
 	private CodegenAst codegenModuleAccess(ModuleAccess ma) {
 		//var expr = codegenExpr(ma.module);
 		return new JIdentifier(ma.field.value.text);
