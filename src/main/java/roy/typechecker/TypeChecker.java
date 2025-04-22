@@ -1162,6 +1162,10 @@ public class TypeChecker {
 		var expr = infer(fieldAccess.obj);
 		var expr_type = expr.type;
 
+		if (expr_type instanceof NamedType nm && typeAliases.containsKey(nm.name.text)) {
+			expr_type = typeAliases.get(nm.name.text).type.clone();
+		}
+		
 		if (!(expr_type instanceof ObjectType) && !(expr_type instanceof TypeVariable)) {
 			Token token = getTokenFromAst(fieldAccess.obj);
 			Errors.reportTypeCheckError(token, "Field access is not valid for an expression of type " + expr_type + ". Field access only works for object types, but found type: " + expr_type);
@@ -2328,8 +2332,8 @@ public class TypeChecker {
 
 			// Check if both tuples have the same number of elements
 			if (tt1.nodes.size() != tt2.nodes.size()) {
-				throw new TypeMismatchError("Tuple nodes have different sizes: " + 
-					tt1.nodes.size() + " vs " + tt2.nodes.size());
+				throw new TypeMismatchError("Tuple nodes have different sizes: expected a tuple with " + 
+					tt1.nodes.size() + " elements "+ tt1 + " but found a tuple with " +  tt2.nodes.size() + " elements " + tt2 + ".");
 			}
 
 			// Unify each element type
