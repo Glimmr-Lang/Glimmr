@@ -13,6 +13,7 @@ import roy.ast.Array;
 import roy.ast.Ast;
 import roy.ast.BinOp;
 import roy.ast.Block;
+import roy.ast.BooleanValue;
 import roy.ast.Call;
 import roy.ast.FieldAccess;
 import roy.ast.GroupExpression;
@@ -220,10 +221,18 @@ public class Codegen {
 			return codegenTuple(tuple);
 		}
 
+		if (expr instanceof BooleanValue bv) {
+			return codegenBooleanValue(bv);
+		}
+
 		It.todo(expr.getClass().getName());
 		return null;
 	}
 
+	private CodegenAst codegenBooleanValue(BooleanValue bv) {
+		return new JIdentifier(bv.value.text);
+	}
+		
 	private CodegenAst codegenTuple(Tuple tuple) {
 		List<CodegenAst> params = new ArrayList<>();
 		var expr = codegenExpr(new Identifier(new Token(TokenKind.ID, "Tuple")));
