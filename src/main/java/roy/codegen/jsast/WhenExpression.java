@@ -58,6 +58,8 @@ public class WhenExpression implements CodegenAst {
 
 		if (elze != null) {
 			sb.append(genElse(elze).indent(4));
+		} else {
+			sb.append("\n").append("throw new Error(\"Invalid match case\");".indent(4));
 		}
 
 		sb.append("\n");
@@ -184,6 +186,7 @@ public class WhenExpression implements CodegenAst {
 		sb.append("if (");
 		
 		boolean firstCondition = true;
+		var has_cond = false;
 		List<String> bindings = new ArrayList<>();
 		
 		for (int i = 0; i < tuplePattern.exprs.size(); i++) {
@@ -201,11 +204,15 @@ public class WhenExpression implements CodegenAst {
 				} else if (exprPattern.expr instanceof RString str) {
 					sb.append(String.format("%s == \"%s\"", fieldAccess, str.value.text));
 				}
+				has_cond = true;
 			} else if (elemPattern instanceof BindPattern bindPattern) {
 				bindings.add(String.format("let %s = %s;", bindPattern.name.value.text, fieldAccess));
 			}
 		}
 		
+		if (!has_cond) {
+			sb.append("true");
+		}
 		sb.append(") {\n");
 		
 		// Add bindings for nested variables
