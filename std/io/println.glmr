@@ -20,7 +20,7 @@ fn readLine : String =
 	return new Packages.java.util.Scanner(Packages.java.lang.System.in).nextLine();
 
 #[extern]
-fn readNumber : Double = 
+fn readNumber : Number = 
 	return new Packages.java.util.Scanner(Packages.java.lang.System.in).nextDouble();
 
 #[extern]
