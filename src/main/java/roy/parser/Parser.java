@@ -1366,10 +1366,9 @@ public class Parser {
 		next();
 		var cond = expression();
 		var t = peek(0);
-		if (!(match(TokenKind.KEYWORD) && t.text.equals("then"))) {
-			expect(TokenKind.ERR, "Expected `then` after condition expresssion in if expression");
+		if (!match(TokenKind.LBRACE)) { 
+			expect(TokenKind.ERR, "Expected `{` after condition expresssion in if expression");
 		}
-		next();
 		var then = expression();
 		t = peek(0);
 		if (!(match(TokenKind.KEYWORD) && t.text.equals("else"))) {
@@ -1377,6 +1376,9 @@ public class Parser {
 		}
 		next();
 
+		if (!match(TokenKind.LBRACE)) { 
+			expect(TokenKind.ERR, "Expected `{` after else word expresssion in if expression");
+		}
 		var elze = expression();
 
 		return new IfElse(cond, then, elze);
