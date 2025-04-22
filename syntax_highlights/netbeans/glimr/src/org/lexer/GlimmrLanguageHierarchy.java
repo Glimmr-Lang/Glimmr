@@ -135,6 +135,7 @@ TOKEN :
 			new GlimmrTokenId("XOR", "operator", 69),
 			new GlimmrTokenId("REM", "operator", 70),
 			new GlimmrTokenId("LSHIFT", "operator", 71),
+			new GlimmrTokenId("HASH", "operator", 86),
 			new GlimmrTokenId("PLUSASSIGN", "operator", 108),
 			new GlimmrTokenId("MINUSASSIGN", "operator", 109),
 			new GlimmrTokenId("STARASSIGN", "operator", 110),

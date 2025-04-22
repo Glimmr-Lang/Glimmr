@@ -57,119 +57,123 @@ public interface GlimmrParserConstants {
   /** RegularExpression Id. */
   int IF = 27;
   /** RegularExpression Id. */
-  int INTEGER_LITERAL = 28;
+  int MODULE = 28;
   /** RegularExpression Id. */
-  int DECIMAL_LITERAL = 29;
+  int INTEGER_LITERAL = 29;
   /** RegularExpression Id. */
-  int HEX_LITERAL = 30;
+  int DECIMAL_LITERAL = 30;
   /** RegularExpression Id. */
-  int OCTAL_LITERAL = 31;
+  int HEX_LITERAL = 31;
   /** RegularExpression Id. */
-  int FLOATING_POINT_LITERAL = 32;
+  int OCTAL_LITERAL = 32;
   /** RegularExpression Id. */
-  int EXPONENT = 33;
+  int FLOATING_POINT_LITERAL = 33;
   /** RegularExpression Id. */
-  int CHARACTER_LITERAL = 34;
+  int EXPONENT = 34;
   /** RegularExpression Id. */
-  int STRING_LITERAL = 35;
+  int CHARACTER_LITERAL = 35;
   /** RegularExpression Id. */
-  int IDENTIFIER = 36;
+  int STRING_LITERAL = 36;
   /** RegularExpression Id. */
-  int LETTER = 37;
+  int IDENTIFIER = 37;
   /** RegularExpression Id. */
-  int PART_LETTER = 38;
+  int LETTER = 38;
   /** RegularExpression Id. */
-  int LPAREN = 39;
+  int PART_LETTER = 39;
   /** RegularExpression Id. */
-  int RPAREN = 40;
+  int LPAREN = 40;
   /** RegularExpression Id. */
-  int LBRACE = 41;
+  int RPAREN = 41;
   /** RegularExpression Id. */
-  int RBRACE = 42;
+  int LBRACE = 42;
   /** RegularExpression Id. */
-  int LBRACKET = 43;
+  int RBRACE = 43;
   /** RegularExpression Id. */
-  int RBRACKET = 44;
+  int LBRACKET = 44;
   /** RegularExpression Id. */
-  int SEMICOLON = 45;
+  int RBRACKET = 45;
   /** RegularExpression Id. */
-  int COMMA = 46;
+  int SEMICOLON = 46;
   /** RegularExpression Id. */
-  int DOT = 47;
+  int COMMA = 47;
   /** RegularExpression Id. */
-  int ASSIGN = 48;
+  int DOT = 48;
   /** RegularExpression Id. */
-  int GT = 49;
+  int ASSIGN = 49;
   /** RegularExpression Id. */
-  int LT = 50;
+  int GT = 50;
   /** RegularExpression Id. */
-  int BANG = 51;
+  int LT = 51;
   /** RegularExpression Id. */
-  int TILDE = 52;
+  int BANG = 52;
   /** RegularExpression Id. */
-  int HOOK = 53;
+  int TILDE = 53;
   /** RegularExpression Id. */
-  int COLON = 54;
+  int HOOK = 54;
   /** RegularExpression Id. */
-  int EQ = 55;
+  int COLON = 55;
   /** RegularExpression Id. */
-  int LE = 56;
+  int EQ = 56;
   /** RegularExpression Id. */
-  int GE = 57;
+  int LE = 57;
   /** RegularExpression Id. */
-  int NE = 58;
+  int GE = 58;
   /** RegularExpression Id. */
-  int SC_OR = 59;
+  int NE = 59;
   /** RegularExpression Id. */
-  int SC_AND = 60;
+  int SC_OR = 60;
   /** RegularExpression Id. */
-  int INCR = 61;
+  int SC_AND = 61;
   /** RegularExpression Id. */
-  int DECR = 62;
+  int INCR = 62;
   /** RegularExpression Id. */
-  int PLUS = 63;
+  int DECR = 63;
   /** RegularExpression Id. */
-  int MINUS = 64;
+  int PLUS = 64;
   /** RegularExpression Id. */
-  int STAR = 65;
+  int MINUS = 65;
   /** RegularExpression Id. */
-  int SLASH = 66;
+  int STAR = 66;
   /** RegularExpression Id. */
-  int BIT_AND = 67;
+  int SLASH = 67;
   /** RegularExpression Id. */
-  int BIT_OR = 68;
+  int BIT_AND = 68;
   /** RegularExpression Id. */
-  int XOR = 69;
+  int BIT_OR = 69;
   /** RegularExpression Id. */
-  int REM = 70;
+  int XOR = 70;
   /** RegularExpression Id. */
-  int LSHIFT = 71;
+  int REM = 71;
   /** RegularExpression Id. */
-  int RSIGNEDSHIFT = 72;
+  int LSHIFT = 72;
   /** RegularExpression Id. */
-  int RUNSIGNEDSHIFT = 73;
+  int RSIGNEDSHIFT = 73;
   /** RegularExpression Id. */
-  int PLUSASSIGN = 74;
+  int RUNSIGNEDSHIFT = 74;
   /** RegularExpression Id. */
-  int MINUSASSIGN = 75;
+  int PLUSASSIGN = 75;
   /** RegularExpression Id. */
-  int STARASSIGN = 76;
+  int MINUSASSIGN = 76;
   /** RegularExpression Id. */
-  int SLASHASSIGN = 77;
+  int STARASSIGN = 77;
   /** RegularExpression Id. */
-  int ANDASSIGN = 78;
+  int SLASHASSIGN = 78;
   /** RegularExpression Id. */
-  int ORASSIGN = 79;
+  int ANDASSIGN = 79;
   /** RegularExpression Id. */
-  int XORASSIGN = 80;
+  int ORASSIGN = 80;
   /** RegularExpression Id. */
-  int REMASSIGN = 81;
+  int XORASSIGN = 81;
   /** RegularExpression Id. */
-  int LSHIFTASSIGN = 82;
+  int REMASSIGN = 82;
   /** RegularExpression Id. */
-  int RSIGNEDSHIFTASSIGN = 83;
+  int LSHIFTASSIGN = 83;
   /** RegularExpression Id. */
-  int RUNSIGNEDSHIFTASSIGN = 84;
+  int RSIGNEDSHIFTASSIGN = 84;
+  /** RegularExpression Id. */
+  int RUNSIGNEDSHIFTASSIGN = 85;
+  /** RegularExpression Id. */
+  int HASH = 86;
 
   /** Lexical state. */
   int DEFAULT = 0;
@@ -210,6 +214,7 @@ public interface GlimmrParserConstants {
     "\"let\"",
     "\"in\"",
     "\"if\"",
+    "\"module\"",
     "<INTEGER_LITERAL>",
     "<DECIMAL_LITERAL>",
     "<HEX_LITERAL>",
@@ -267,6 +272,7 @@ public interface GlimmrParserConstants {
     "\"<<=\"",
     "\">>=\"",
     "\">>>=\"",
+    "\"#\"",
   };
 
 }

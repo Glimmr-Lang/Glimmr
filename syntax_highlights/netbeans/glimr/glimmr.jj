@@ -87,6 +87,7 @@ TOKEN :
 | < LET: "let" >
 | < IN: "in" >
 | < IF: "if" >
+| < MODULE: "module" >
 }
 
 /* LITERALS */
@@ -847,5 +848,6 @@ TOKEN :
 | < LSHIFTASSIGN: "<<=" >
 | < RSIGNEDSHIFTASSIGN: ">>=" >
 | < RUNSIGNEDSHIFTASSIGN: ">>>=" >
+| < HASH: "#" >
 }
 
