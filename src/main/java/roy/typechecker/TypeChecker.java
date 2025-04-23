@@ -2530,7 +2530,22 @@ public class TypeChecker {
 			return;
 		}
 
-		throw new TypeMismatchError(t1 + " is not compatible with " + t2);
+		// Handle ListType unification
+		if (t1 instanceof ListType && t2 instanceof ListType) {
+			ListType lt1 = (ListType) t1;
+			ListType lt2 = (ListType) t2;
+			
+			// Unify the inner types of both lists
+			unify(lt1.inner, lt2.inner, node);
+			return;
+		}
+
+		if (t1 instanceof TypeVariable) {
+			substituteTypeVar((TypeVariable) t1, t2);
+			return;
+		}
+
+		throw new TypeMismatchError("Cannot unify types " + t1 + " and " + t2);
 	}
 
 	// Substitute a type variable with a concrete type
