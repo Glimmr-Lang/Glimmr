@@ -76,3 +76,9 @@ fn nanoTime : Number =
 fn gc : Unit = 
 	Packages.java.lang.System.gc()
 	return;
+
+
+#[extern]
+fn exit (code: Number) : Unit = 
+	Packages.java.lang.System.exit(code)
+	return;
