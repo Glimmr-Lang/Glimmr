@@ -45,7 +45,6 @@ fn setInnerHtml (element: HTMLElement) (text: String) : HTMLElement =
 	element.innerHTML = text
 	return element;
 
-type EventHandler = a -> Unit
 
 #[extern]
 fn setOnClick (element: HTMLElement) (handler: EventHandler) : HTMLElement = 
