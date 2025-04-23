@@ -13,6 +13,6 @@ public class StringLiteral implements CodegenAst {
 
 	@Override
 	public String toString() {
-		return String.format("'%s'", value);
+		return String.format("`%s`", value);
 	}
 }
